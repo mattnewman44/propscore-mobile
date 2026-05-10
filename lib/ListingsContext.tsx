@@ -5,6 +5,7 @@ import { computeMarketStats } from "./marketStats";
 interface ListingsContextType {
   listings: any[];
   loading: boolean;
+  fetchError: string | null;
   savedHomes: Set<string>;
   toggleSaved: (id: string) => void;
   updateListing: (id: string, fields: Partial<any>) => void;
@@ -16,6 +17,7 @@ interface ListingsContextType {
 const ListingsContext = createContext<ListingsContextType>({
   listings: [],
   loading: true,
+  fetchError: null,
   savedHomes: new Set(),
   toggleSaved: () => {},
   updateListing: () => {},
@@ -27,12 +29,16 @@ const ListingsContext = createContext<ListingsContextType>({
 export function ListingsProvider({ children }: { children: React.ReactNode }) {
   const [listings, setListings] = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [savedHomes, setSavedHomes] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchListings()
-      .then(data => setListings(data))
-      .catch(console.error)
+      .then(data => { setListings(data); setFetchError(null); })
+      .catch(err => {
+        console.error("fetchListings failed:", err);
+        setFetchError(err?.message || "Network error — check connection");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -64,7 +70,7 @@ export function ListingsProvider({ children }: { children: React.ReactNode }) {
     : null;
 
   return (
-    <ListingsContext.Provider value={{ listings, loading, savedHomes, toggleSaved, updateListing, marketStats, avgCutPct, avgDOM }}>
+    <ListingsContext.Provider value={{ listings, loading, fetchError, savedHomes, toggleSaved, updateListing, marketStats, avgCutPct, avgDOM }}>
       {children}
     </ListingsContext.Provider>
   );

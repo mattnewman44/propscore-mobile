@@ -42,7 +42,7 @@ const GRADE_BTNS = [
 ];
 
 export default function HomeScreen() {
-  const { listings, loading, savedHomes, toggleSaved, updateListing, marketStats } = useListings();
+  const { listings, loading, fetchError, savedHomes, toggleSaved, updateListing, marketStats } = useListings();
 
   const [searchLoading, setSearchLoading]   = useState(false);
   const [selected, setSelected]             = useState<any>(null);
@@ -294,6 +294,13 @@ export default function HomeScreen() {
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#2563eb" />
           <Text style={styles.loadingText}>Loading listings…</Text>
+        </View>
+      ) : fetchError ? (
+        <View style={styles.center}>
+          <Text style={{ fontSize: 32, marginBottom: 12 }}>⚠️</Text>
+          <Text style={{ fontSize: 15, fontWeight: "700", color: "#111", marginBottom: 6 }}>Couldn't load listings</Text>
+          <Text style={{ fontSize: 13, color: "#6b7280", textAlign: "center", lineHeight: 20 }}>{fetchError}</Text>
+          <Text style={{ fontSize: 12, color: "#9ca3af", marginTop: 8, textAlign: "center" }}>Check your connection or Supabase project status</Text>
         </View>
       ) : (
         <FlatList

@@ -1,3 +1,4 @@
+import "react-native-url-polyfill/auto";
 import React, { useCallback, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, TextInput,
@@ -6,8 +7,18 @@ import {
 import MapView, { Marker } from "react-native-maps";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DetailSheet from "../../components/DetailSheet";
+import FilterPanel, { FilterValues } from "../../components/FilterPanel";
 import { useListings } from "../../lib/ListingsContext";
 import { searchByAddress } from "../../lib/data";
+
+const DEFAULT_FILTERS: FilterValues = {
+  priceMin: 0, priceMax: 2_000_000,
+  scoreMin: 0, scoreMax: 100,
+  bedsMin: 0, bathsMin: 0,
+  showDistressedOnly: false,
+  showSavedOnly: false,
+  showEnrichedOnly: false,
+};
 
 const GRADE_COLORS = {
   high:   "#dc2626",
@@ -21,26 +32,54 @@ const GRADE_BTNS = [
   { key: "low",    color: "#16a34a", bg: "#f0fdf4", border: "#86efac", label: "Low" },
 ];
 
+// Max pins to render at once — keeps touches responsive
+const MAX_PINS = 400;
+
 function fmtPrice(n: number) {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `$${Math.round(n / 1_000)}k`;
   return `$${n}`;
 }
 
-const API_BASE = "https://distressed-property-finder-v2.vercel.app";
-
 export default function MapScreen() {
   const { listings, loading, savedHomes, toggleSaved } = useListings();
 
   const [gradeFilter, setGradeFilter]   = useState<string | null>(null);
-  const [sheet, setSheet]               = useState<any>(null);   // bottom peek sheet
-  const [detail, setDetail]             = useState<any>(null);   // full detail modal
+  const [filters, setFilters]           = useState<FilterValues>(DEFAULT_FILTERS);
+  const [showFilters, setShowFilters]   = useState(false);
+  const [sheet, setSheet]               = useState<any>(null);
+  const [detail, setDetail]             = useState<any>(null);
   const [query, setQuery]               = useState("");
   const [suggestions, setSuggestions]   = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const visible = listings.filter(p => !gradeFilter || p.grade === gradeFilter);
+  const hasActiveFilters =
+    filters.priceMin > 0 || filters.priceMax < 2_000_000 ||
+    filters.scoreMin > 0 || filters.scoreMax < 100 ||
+    filters.bedsMin > 0  || filters.bathsMin > 0 ||
+    filters.showDistressedOnly || filters.showSavedOnly || filters.showEnrichedOnly;
+
+  // Apply all filters
+  const filtered = listings.filter(p => {
+    if (gradeFilter && p.grade !== gradeFilter) return false;
+    if (p.price < filters.priceMin || p.price > filters.priceMax) return false;
+    if (p.score < filters.scoreMin || p.score > filters.scoreMax) return false;
+    if (filters.bedsMin  > 0 && (p.bedrooms  || 0) < filters.bedsMin)  return false;
+    if (filters.bathsMin > 0 && (p.bathrooms || 0) < filters.bathsMin) return false;
+    if (filters.showDistressedOnly && p.grade === "low") return false;
+    if (filters.showSavedOnly && !savedHomes.has(String(p.id))) return false;
+    if (filters.showEnrichedOnly && !p.enriched) return false;
+    return true;
+  });
+
+  // Cap at MAX_PINS sorted by score descending so highest-score pins always show
+  const visible = filtered
+    .slice()
+    .sort((a, b) => b.score - a.score)
+    .slice(0, MAX_PINS);
+
+  const isCapped = filtered.length > MAX_PINS;
 
   // Mapbox autocomplete
   const fetchSuggestions = useCallback((text: string) => {
@@ -65,7 +104,7 @@ export default function MapScreen() {
     setSearchLoading(true);
     try {
       const result = await searchByAddress(feature.place_name);
-      if (result) { setSheet(result); }
+      if (result) setSheet(result);
     } catch {}
     finally { setSearchLoading(false); }
   }, []);
@@ -93,12 +132,12 @@ export default function MapScreen() {
           }}
           showsUserLocation
           showsCompass={false}
-          onPress={() => { setSheet(null); setSuggestions([]); }}
         >
           {visible.map(p => (
             <Marker
               key={String(p.id)}
               coordinate={{ latitude: p.lat, longitude: p.lng }}
+              tracksViewChanges={false}
               onPress={() => { setSheet(p); setSuggestions([]); }}
             >
               <View style={[styles.pin, { backgroundColor: GRADE_COLORS[p.grade as keyof typeof GRADE_COLORS] || "#6b7280" }]}>
@@ -109,8 +148,9 @@ export default function MapScreen() {
         </MapView>
       )}
 
-      {/* ── Floating top bar: search + grade filters ── */}
+      {/* ── Floating top bar ── */}
       <SafeAreaView style={styles.topOverlay} edges={["top"]} pointerEvents="box-none">
+        {/* Search row */}
         <View style={styles.searchRow}>
           <View style={styles.searchBox}>
             <TextInput
@@ -141,10 +181,12 @@ export default function MapScreen() {
           </View>
         )}
 
-        {/* Grade filters */}
+        {/* Filter row: count + grade pills + Filters button */}
         <View style={styles.filterRow}>
           <View style={styles.countPill}>
-            <Text style={styles.countText}>{visible.length.toLocaleString()} listings</Text>
+            <Text style={styles.countText}>
+              {isCapped ? `Top ${MAX_PINS} of ${filtered.length.toLocaleString()}` : `${filtered.length.toLocaleString()} listings`}
+            </Text>
           </View>
           <View style={styles.gradeFilters}>
             {GRADE_BTNS.map(g => (
@@ -158,6 +200,14 @@ export default function MapScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          <TouchableOpacity
+            style={[styles.filterBtn, hasActiveFilters && styles.filterBtnActive]}
+            onPress={() => setShowFilters(true)}
+          >
+            <Text style={[styles.filterBtnText, hasActiveFilters && styles.filterBtnTextActive]}>
+              {hasActiveFilters ? "⚙ Filters •" : "⚙ Filters"}
+            </Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
 
@@ -171,7 +221,6 @@ export default function MapScreen() {
               <Image source={{ uri: sheet.photo_url }} style={styles.sheetPhoto} resizeMode="cover" />
             )}
             <View style={styles.sheetBody}>
-              {/* Address + close */}
               <View style={styles.sheetTopRow}>
                 <View style={{ flex: 1, paddingRight: 8 }}>
                   <Text style={styles.sheetAddress} numberOfLines={1}>{sheet.address}</Text>
@@ -182,12 +231,13 @@ export default function MapScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Price + score badge */}
               <View style={styles.sheetMidRow}>
                 <Text style={styles.sheetPrice}>{fmtPrice(sheet.price)}</Text>
                 {(() => {
-                  const gc = sheet.grade === "high" ? { bg:"#fef2f2", border:"#fca5a5", dot:"#dc2626", text:"#991b1b" }
-                    : sheet.grade === "medium" ? { bg:"#fffbeb", border:"#fcd34d", dot:"#d97706", text:"#92400e" }
+                  const gc = sheet.grade === "high"
+                    ? { bg:"#fef2f2", border:"#fca5a5", dot:"#dc2626", text:"#991b1b" }
+                    : sheet.grade === "medium"
+                    ? { bg:"#fffbeb", border:"#fcd34d", dot:"#d97706", text:"#92400e" }
                     : { bg:"#f0fdf4", border:"#86efac", dot:"#16a34a", text:"#15803d" };
                   return (
                     <View style={[styles.scoreBadge, { backgroundColor: gc.bg, borderColor: gc.border }]}>
@@ -198,7 +248,6 @@ export default function MapScreen() {
                 })()}
               </View>
 
-              {/* Meta pills */}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
                 {sheet.bedrooms > 0 && (
                   <View style={styles.metaPill}>
@@ -252,6 +301,14 @@ export default function MapScreen() {
           onToggleSaved={() => detail && toggleSaved(String(detail.id))}
         />
       </Modal>
+
+      {/* Filter panel */}
+      <FilterPanel
+        visible={showFilters}
+        onClose={() => setShowFilters(false)}
+        values={filters}
+        onApply={v => setFilters(v)}
+      />
     </View>
   );
 }
@@ -260,11 +317,9 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   loadingText: { fontSize: 14, color: "#6b7280" },
 
-  // Pins
   pin: { borderRadius: 12, paddingHorizontal: 7, paddingVertical: 3, minWidth: 28, alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3 },
   pinText: { color: "#fff", fontSize: 11, fontWeight: "700" },
 
-  // Top overlay
   topOverlay: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 200 },
   searchRow: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6 },
   searchBox: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 28, paddingHorizontal: 16, paddingVertical: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 8, elevation: 4 },
@@ -273,15 +328,19 @@ const styles = StyleSheet.create({
   dropdown: { marginHorizontal: 12, backgroundColor: "#fff", borderRadius: 14, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 4, overflow: "hidden" },
   dropdownItem: { padding: 12, borderBottomWidth: 0.5, borderColor: "#f0f0f0" },
   dropdownText: { fontSize: 13, color: "#374151" },
-  filterRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingBottom: 8, gap: 8 },
-  countPill: { backgroundColor: "#111", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
-  countText: { color: "#fff", fontSize: 12, fontWeight: "600" },
-  gradeFilters: { flexDirection: "row", gap: 6 },
-  gradeBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 5, backgroundColor: "#fff" },
-  dot: { width: 6, height: 6, borderRadius: 3 },
-  gradeBtnText: { fontSize: 12, color: "#374151", fontWeight: "500" },
 
-  // Bottom sheet
+  filterRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingBottom: 8, gap: 6, flexWrap: "nowrap" },
+  countPill: { backgroundColor: "#111", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
+  countText: { color: "#fff", fontSize: 11, fontWeight: "600" },
+  gradeFilters: { flexDirection: "row", gap: 5, flex: 1 },
+  gradeBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 5, backgroundColor: "#fff" },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  gradeBtnText: { fontSize: 11, color: "#374151", fontWeight: "500" },
+  filterBtn: { borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 6, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: "#fff" },
+  filterBtnActive: { backgroundColor: "#111", borderColor: "#111" },
+  filterBtnText: { fontSize: 11, color: "#374151", fontWeight: "600" },
+  filterBtnTextActive: { color: "#fff" },
+
   sheetBackdrop: { position: "absolute", inset: 0, zIndex: 999 } as any,
   sheet: { position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 1000, backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, shadowColor: "#000", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.12, shadowRadius: 12, elevation: 8, paddingBottom: 32 },
   sheetHandle: { width: 40, height: 4, backgroundColor: "#d1d5db", borderRadius: 2, alignSelf: "center", marginTop: 10, marginBottom: 6 },
