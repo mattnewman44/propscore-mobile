@@ -7,19 +7,33 @@ import PropertyCard from "../../components/PropertyCard";
 import DetailSheet from "../../components/DetailSheet";
 import FilterPanel from "../../components/FilterPanel";
 import AddressSearch from "../../components/AddressSearch";
+import MarketStatsBar from "../../components/MarketStatsBar";
 import { fetchListings, searchByAddress } from "../../lib/data";
+import { computeMarketStats } from "../../lib/marketStats";
+import { MOCK_MARKET } from "../../lib/data";
 
 const DEFAULT_FILTERS = { priceMin: 0, priceMax: 2_000_000, scoreMin: 0, scoreMax: 100, bedsMin: 0 };
+const SALE_TYPE_OPTIONS = [
+  { key: "foreclosure", label: "🏦 Foreclosure / REO" },
+  { key: "shortSale",   label: "⏳ Short sale" },
+  { key: "probate",     label: "⚖️ Probate / estate" },
+  { key: "asIs",        label: "🔧 As-is / fixer" },
+  { key: "cashOnly",    label: "💵 Cash only" },
+];
 
 export default function HomeScreen() {
-  const [listings, setListings] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [listings, setListings]       = useState<any[]>([]);
+  const [loading, setLoading]         = useState(true);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [selected, setSelected] = useState<any>(null);
-  const [sortBy, setSortBy] = useState<"score" | "price" | "dom">("score");
+  const [selected, setSelected]       = useState<any>(null);
+  const [sortBy, setSortBy]           = useState<"score" | "price" | "dom">("score");
+  const [sortDir, setSortDir]         = useState<"desc" | "asc">("desc");
   const [gradeFilter, setGradeFilter] = useState<string | null>(null);
-  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [filters, setFilters]         = useState(DEFAULT_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
+  const [saleTypeFilter, setSaleTypeFilter] = useState<string | null>(null);
+  const [savedHomes, setSavedHomes]   = useState<Set<string>>(new Set());
+  const [listLimit, setListLimit]     = useState(50);
 
   useEffect(() => {
     fetchListings()
@@ -41,10 +55,18 @@ export default function HomeScreen() {
     }
   }, []);
 
+  const toggleSaved = useCallback((id: string) => {
+    setSavedHomes(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+
   const filtersActive =
     filters.priceMin > 0 || filters.priceMax < 2_000_000 ||
     filters.scoreMin > 0 || filters.scoreMax < 100 ||
-    filters.bedsMin > 0;
+    filters.bedsMin > 0 || !!saleTypeFilter;
 
   const sorted = [...listings]
     .filter(p => {
@@ -52,13 +74,17 @@ export default function HomeScreen() {
       if (p.price < filters.priceMin || p.price > filters.priceMax) return false;
       if (p.score < filters.scoreMin || p.score > filters.scoreMax) return false;
       if (filters.bedsMin > 0 && p.bedrooms < filters.bedsMin) return false;
+      if (saleTypeFilter && !p.financingFlags?.some((f: any) => f.key === saleTypeFilter)) return false;
       return true;
     })
-    .sort((a, b) =>
-      sortBy === "score" ? b.score - a.score :
-      sortBy === "price" ? a.price - b.price :
-      b.dom - a.dom
-    );
+    .sort((a, b) => {
+      const mult = sortDir === "desc" ? -1 : 1;
+      if (sortBy === "score") return mult * (a.score - b.score);
+      if (sortBy === "price") return mult * (a.price - b.price);
+      return mult * (a.dom - b.dom);
+    });
+
+  const marketStats = computeMarketStats(listings, MOCK_MARKET.monthsSupply);
 
   const GRADE_BTNS = [
     { key: "high",   label: "High",   color: "#dc2626", bg: "#fef2f2", border: "#fca5a5" },
@@ -66,60 +92,78 @@ export default function HomeScreen() {
     { key: "low",    label: "Low",    color: "#16a34a", bg: "#f0fdf4", border: "#86efac" },
   ];
 
+  const toggleSort = (col: "score" | "price" | "dom") => {
+    if (sortBy === col) setSortDir(d => d === "desc" ? "asc" : "desc");
+    else { setSortBy(col); setSortDir("desc"); }
+  };
+
+  const clearAll = () => {
+    setGradeFilter(null);
+    setFilters(DEFAULT_FILTERS);
+    setSaleTypeFilter(null);
+    setSortBy("score");
+    setSortDir("desc");
+  };
+
+  const anyActive = filtersActive || !!gradeFilter;
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" />
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.logo}>
-          <Text style={{ fontWeight: "400" }}>Prop</Text>
-          <Text style={{ fontWeight: "800" }}>Score</Text>
-        </Text>
+        <Text style={styles.logo}><Text style={{ fontWeight: "400" }}>Prop</Text><Text style={{ fontWeight: "800" }}>Score</Text></Text>
         {!loading && <Text style={styles.count}>{sorted.length.toLocaleString()} listings</Text>}
       </View>
 
-      {/* Search with autocomplete */}
+      {/* Search */}
       <AddressSearch onSearch={handleSearch} loading={searchLoading} />
 
-      {/* Filters + sort row */}
-      <View style={styles.filterRow}>
-        <View style={styles.leftFilters}>
+      {/* Filter pills */}
+      <View style={styles.pillRow}>
+        <TouchableOpacity
+          style={[styles.pill, filtersActive && styles.pillActive]}
+          onPress={() => setShowFilters(true)}
+        >
+          <Text style={[styles.pillText, filtersActive && styles.pillTextActive]}>
+            Filters{filtersActive ? " ●" : " ▾"}
+          </Text>
+        </TouchableOpacity>
+
+        {GRADE_BTNS.map(g => (
           <TouchableOpacity
-            style={[styles.filterBtn, filtersActive && styles.filterBtnActive]}
-            onPress={() => setShowFilters(true)}
+            key={g.key}
+            style={[styles.pill, { borderColor: g.border }, gradeFilter === g.key && { backgroundColor: g.bg }]}
+            onPress={() => setGradeFilter(gradeFilter === g.key ? null : g.key)}
           >
-            <Text style={[styles.filterBtnText, filtersActive && styles.filterBtnTextActive]}>
-              {filtersActive ? "Filters ●" : "Filters"}
-            </Text>
+            <View style={[styles.gradeDot, { backgroundColor: g.color }]} />
+            <Text style={[styles.pillText, gradeFilter === g.key && { color: g.color, fontWeight: "600" }]}>{g.label}</Text>
           </TouchableOpacity>
+        ))}
+      </View>
 
-          {GRADE_BTNS.map(g => (
-            <TouchableOpacity
-              key={g.key}
-              style={[styles.gradeBtn, { borderColor: g.border }, gradeFilter === g.key && { backgroundColor: g.bg }]}
-              onPress={() => setGradeFilter(gradeFilter === g.key ? null : g.key)}
-            >
-              <View style={[styles.gradeDot, { backgroundColor: g.color }]} />
-              <Text style={[styles.gradeBtnText, gradeFilter === g.key && { color: g.color }]}>{g.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
+      {/* Sort row */}
+      <View style={styles.sortRow}>
         <View style={styles.sortBtns}>
           {(["score", "price", "dom"] as const).map(s => (
-            <TouchableOpacity
-              key={s}
-              style={[styles.sortBtn, sortBy === s && styles.sortBtnActive]}
-              onPress={() => setSortBy(s)}
-            >
+            <TouchableOpacity key={s} style={[styles.sortBtn, sortBy === s && styles.sortBtnActive]} onPress={() => toggleSort(s)}>
               <Text style={[styles.sortBtnText, sortBy === s && styles.sortBtnTextActive]}>
                 {s === "score" ? "Score" : s === "price" ? "Price" : "DOM"}
+                {sortBy === s ? (sortDir === "desc" ? " ↓" : " ↑") : ""}
               </Text>
             </TouchableOpacity>
           ))}
         </View>
+        {anyActive && (
+          <TouchableOpacity onPress={clearAll}>
+            <Text style={styles.clearText}>✕ Clear</Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      {/* Market stats */}
+      {!loading && <MarketStatsBar stats={marketStats} />}
 
       {/* List */}
       {loading ? (
@@ -129,18 +173,32 @@ export default function HomeScreen() {
         </View>
       ) : (
         <FlatList
-          data={sorted}
+          data={sorted.slice(0, listLimit)}
           keyExtractor={item => String(item.id)}
           renderItem={({ item }) => (
-            <PropertyCard property={item} onPress={() => setSelected(item)} />
+            <PropertyCard
+              property={item}
+              onPress={() => setSelected(item)}
+              saved={savedHomes.has(String(item.id))}
+              onToggleSaved={() => toggleSaved(String(item.id))}
+            />
           )}
-          contentContainerStyle={{ paddingTop: 8, paddingBottom: 20 }}
+          contentContainerStyle={{ paddingTop: 8, paddingBottom: 100 }}
           showsVerticalScrollIndicator={false}
+          ListFooterComponent={
+            sorted.length > listLimit ? (
+              <TouchableOpacity style={styles.loadMoreBtn} onPress={() => setListLimit(l => l + 50)}>
+                <Text style={styles.loadMoreText}>
+                  Show {Math.min(50, sorted.length - listLimit)} more · {sorted.length - listLimit} remaining
+                </Text>
+              </TouchableOpacity>
+            ) : null
+          }
           ListEmptyComponent={
             <View style={styles.center}>
               <Text style={styles.emptyText}>No listings match your filters</Text>
-              <TouchableOpacity onPress={() => { setFilters(DEFAULT_FILTERS); setGradeFilter(null); }}>
-                <Text style={styles.clearText}>Clear filters</Text>
+              <TouchableOpacity onPress={clearAll}>
+                <Text style={styles.clearLink}>Clear filters</Text>
               </TouchableOpacity>
             </View>
           }
@@ -158,6 +216,9 @@ export default function HomeScreen() {
         onClose={() => setShowFilters(false)}
         values={filters}
         onApply={setFilters}
+        saleTypeFilter={saleTypeFilter}
+        onSaleTypeFilter={setSaleTypeFilter}
+        saleTypeOptions={SALE_TYPE_OPTIONS}
       />
     </SafeAreaView>
   );
@@ -168,22 +229,23 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
   logo: { fontSize: 22, color: "#111" },
   count: { fontSize: 13, color: "#6b7280" },
-  filterRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 12, paddingBottom: 8, flexWrap: "wrap", gap: 6 },
-  leftFilters: { flexDirection: "row", gap: 6, alignItems: "center", flexWrap: "wrap" },
-  filterBtn: { borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 6, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: "#fff" },
-  filterBtnActive: { backgroundColor: "#111", borderColor: "#111" },
-  filterBtnText: { fontSize: 12, color: "#374151", fontWeight: "500" },
-  filterBtnTextActive: { color: "#fff", fontWeight: "600" },
-  gradeBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: "#fff" },
+  pillRow: { flexDirection: "row", paddingHorizontal: 12, paddingBottom: 6, gap: 6, flexWrap: "wrap" },
+  pill: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: "#fff" },
+  pillActive: { backgroundColor: "#111", borderColor: "#111" },
+  pillText: { fontSize: 12, color: "#374151", fontWeight: "500" },
+  pillTextActive: { color: "#fff", fontWeight: "600" },
   gradeDot: { width: 6, height: 6, borderRadius: 3 },
-  gradeBtnText: { fontSize: 12, color: "#374151", fontWeight: "500" },
+  sortRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, paddingBottom: 8 },
   sortBtns: { flexDirection: "row", backgroundColor: "#f3f4f6", borderRadius: 8, padding: 2 },
   sortBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
   sortBtnActive: { backgroundColor: "#fff", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 2, elevation: 1 },
   sortBtnText: { fontSize: 12, color: "#6b7280" },
   sortBtnTextActive: { color: "#111", fontWeight: "600" },
+  clearText: { fontSize: 12, color: "#dc2626", fontWeight: "500" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingTop: 60 },
   loadingText: { fontSize: 14, color: "#6b7280" },
   emptyText: { fontSize: 15, color: "#374151" },
-  clearText: { fontSize: 14, color: "#2563eb", fontWeight: "600" },
+  clearLink: { fontSize: 14, color: "#2563eb", fontWeight: "600" },
+  loadMoreBtn: { marginHorizontal: 12, marginBottom: 16, padding: 14, backgroundColor: "#f3f4f6", borderRadius: 10, alignItems: "center" },
+  loadMoreText: { fontSize: 13, color: "#374151" },
 });

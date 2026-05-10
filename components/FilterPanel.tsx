@@ -18,6 +18,9 @@ interface Props {
   onClose: () => void;
   values: FilterValues;
   onApply: (v: FilterValues) => void;
+  saleTypeFilter?: string | null;
+  onSaleTypeFilter?: (key: string | null) => void;
+  saleTypeOptions?: { key: string; label: string }[];
 }
 
 function fmtPrice(n: number) {
@@ -26,7 +29,7 @@ function fmtPrice(n: number) {
   return `$${n}`;
 }
 
-export default function FilterPanel({ visible, onClose, values, onApply }: Props) {
+export default function FilterPanel({ visible, onClose, values, onApply, saleTypeFilter, onSaleTypeFilter, saleTypeOptions = [] }: Props) {
   const [priceMin, setPriceMin] = useState(values.priceMin);
   const [priceMax, setPriceMax] = useState(values.priceMax);
   const [scoreMin, setScoreMin] = useState(values.scoreMin);
@@ -150,6 +153,31 @@ export default function FilterPanel({ visible, onClose, values, onApply }: Props
             </View>
           </View>
 
+          {/* Sale type */}
+          {saleTypeOptions.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Sale type</Text>
+              <TouchableOpacity
+                style={[styles.bedBtn, !saleTypeFilter && styles.bedBtnActive]}
+                onPress={() => onSaleTypeFilter?.(null)}
+              >
+                <Text style={[styles.bedBtnText, !saleTypeFilter && styles.bedBtnTextActive]}>Any</Text>
+              </TouchableOpacity>
+              <View style={{ height: 8 }} />
+              {saleTypeOptions.map(opt => (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[styles.saleTypeBtn, saleTypeFilter === opt.key && styles.saleTypeBtnActive]}
+                  onPress={() => onSaleTypeFilter?.(saleTypeFilter === opt.key ? null : opt.key)}
+                >
+                  <Text style={[styles.saleTypeBtnText, saleTypeFilter === opt.key && styles.saleTypeBtnTextActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
           <View style={{ height: 20 }} />
         </ScrollView>
 
@@ -187,4 +215,8 @@ const styles = StyleSheet.create({
   footer: { padding: 16, borderTopWidth: 0.5, borderColor: "#e5e7eb" },
   applyBtn: { backgroundColor: "#111", borderRadius: 12, padding: 16, alignItems: "center" },
   applyBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  saleTypeBtn: { borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 8, paddingHorizontal: 14, paddingVertical: 12, backgroundColor: "#fff", marginBottom: 8 },
+  saleTypeBtnActive: { backgroundColor: "#111", borderColor: "#111" },
+  saleTypeBtnText: { fontSize: 14, color: "#374151" },
+  saleTypeBtnTextActive: { color: "#fff", fontWeight: "600" },
 });
