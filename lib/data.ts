@@ -122,6 +122,41 @@ function mapApiDetail(detail: any, search: any, address: string) {
   };
 }
 
+// Persist any API-sourced property back to Supabase so future searches are fast cache hits
+async function upsertListing(p: any): Promise<void> {
+  try {
+    await supabase.from("listings").upsert({
+      zpid:              p.zpid || p.id || null,
+      address:           p.address,
+      city:              p.city,
+      state:             p.state,
+      zip:               p.zip,
+      lat:               p.lat,
+      lng:               p.lng,
+      price:             p.price,
+      beds:              p.bedrooms,
+      baths:             p.bathrooms,
+      sqft:              p.sqft || null,
+      listing_remarks:   p.listingRemarks || null,
+      flood_zone:        p.floodZone || null,
+      avm_estimate:      p.avm_estimate || null,
+      last_sold_price:   p.last_sold_price || null,
+      last_sold_date:    p.last_sold_date || null,
+      photo_url:         p.photo_url || null,
+      is_foreclosure:    p.is_foreclosure || false,
+      is_price_reduced:  p.is_price_reduced || false,
+      listing_source:    "realtor_search",
+      enriched:          true,
+      enriched_at:       new Date().toISOString(),
+      dom:               p.dom || null,
+      listing_status:    p._offMarket ? "OFF_MARKET" : "FOR_SALE",
+      parsed_at:         new Date().toISOString(),
+    }, { onConflict: "zpid" });
+  } catch {
+    // non-blocking — don't let a failed upsert break the search UX
+  }
+}
+
 export async function searchByAddress(address: string) {
   // Step 1: Try Supabase by address string (fast, cached)
   const streetPart = address.split(",")[0].trim();
@@ -142,7 +177,9 @@ export async function searchByAddress(address: string) {
   const json = await res.json();
   if (json.error || !json.detail) return null;
   const raw = mapApiDetail(json.detail, json.search || {}, address);
-  return scoreProperty(raw, MOCK_MARKET, [], DEFAULT_WEIGHTS);
+  const scored = scoreProperty(raw, MOCK_MARKET, [], DEFAULT_WEIGHTS);
+  upsertListing(scored); // fire-and-forget
+  return scored;
 }
 
 // Background enrichment — call after showing a cached Supabase result
@@ -157,7 +194,7 @@ export async function enrichByAddress(prop: any): Promise<Partial<any> | null> {
     const json = await res.json();
     if (!json.detail) return null;
     const d = json.detail;
-    return {
+    const enrichedFields = {
       sqft:            d.description?.sqft                                                   ?? prop.sqft,
       listingRemarks:  d.description?.text                                                   ?? prop.listingRemarks,
       floodZone:       d.local?.flood?.fema_zone?.[0]                                        ?? prop.floodZone,
@@ -171,6 +208,8 @@ export async function enrichByAddress(prop: any): Promise<Partial<any> | null> {
       _refreshedAt:    Date.now(),
       _refreshing:     false,
     };
+    upsertListing({ ...prop, ...enrichedFields }); // fire-and-forget
+    return enrichedFields;
   } catch {
     return null;
   }
