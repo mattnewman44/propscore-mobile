@@ -70,7 +70,13 @@ export async function fetchListings() {
     if (data.length < pageSize) break;
     from += pageSize;
   }
-  return all.map(mapRow).map(p => scoreProperty(p, MOCK_MARKET, [], DEFAULT_WEIGHTS));
+  return all.map(mapRow).map(p => {
+    const scored = scoreProperty(p, MOCK_MARKET, [], DEFAULT_WEIGHTS);
+    // Mobile has no news signal (web gets +10-15 pts from local market news).
+    // Compensate by lowering grade thresholds so the distribution matches web.
+    const grade = scored.score >= 55 ? "high" : scored.score >= 30 ? "medium" : "low";
+    return { ...scored, grade };
+  });
 }
 
 function mapApiDetail(detail: any, search: any, address: string) {

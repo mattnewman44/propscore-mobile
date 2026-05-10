@@ -52,9 +52,10 @@ export default function MapScreen() {
   const [query, setQuery]               = useState("");
   const [suggestions, setSuggestions]   = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  // Matches MapView initialRegion exactly (lat 26.5629 ± 0.09, lng -81.9495 ± 0.09)
   const [region, setRegion] = useState({
-    latMin: 26.40, latMax: 26.73,
-    lngMin: -82.10, lngMax: -81.77,
+    latMin: 26.4729, latMax: 26.6529,
+    lngMin: -82.0395, lngMax: -81.8595,
   });
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
