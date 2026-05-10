@@ -22,6 +22,7 @@ const DEFAULT_FILTERS: FilterValues = {
   priceMin: 0, priceMax: 2_000_000,
   scoreMin: 0, scoreMax: 100,
   bedsMin: 0, bathsMin: 0,
+  domMax: null,
   showDistressedOnly: false,
   showSavedOnly: false,
   showEnrichedOnly: false,

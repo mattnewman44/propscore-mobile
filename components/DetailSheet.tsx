@@ -158,7 +158,10 @@ export default function DetailSheet({ property, onClose, saved = false, onToggle
                 {property.bedrooms}bd · {property.bathrooms}ba{property.sqft ? ` · ${property.sqft.toLocaleString()} sqft` : ""}
               </Text>
             )}
-            {property.dom > 0 && <Text style={styles.meta}>{property.dom} days on market</Text>}
+            {property._offMarket
+              ? <Text style={[styles.meta, { color: "#6b7280", fontWeight: "600" }]}>⚪ Off Market — not currently listed</Text>
+              : property.dom > 0 && <Text style={styles.meta}>{property.dom} days on market</Text>
+            }
             {cutPct > 0 && <Text style={[styles.meta, { color: g.dot }]}>-{cutPct}% price cut</Text>}
           </View>
         </View>

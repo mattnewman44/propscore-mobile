@@ -45,6 +45,7 @@ export interface FilterValues {
   scoreMax: number;
   bedsMin: number;
   bathsMin: number;
+  domMax: number | null;   // null = no cap
   showDistressedOnly: boolean;
   showSavedOnly: boolean;
   showEnrichedOnly: boolean;
@@ -121,14 +122,25 @@ export default function FilterPanel({
   const [scoreMax, setScoreMax]                 = useState(values.scoreMax);
   const [bedsMin, setBedsMin]                   = useState(values.bedsMin);
   const [bathsMin, setBathsMin]                 = useState(values.bathsMin);
+  const [domMax, setDomMax]                     = useState<number | null>(values.domMax);
   const [showDistressedOnly, setShowDistressedOnly] = useState(values.showDistressedOnly);
   const [showSavedOnly, setShowSavedOnly]       = useState(values.showSavedOnly);
   const [showEnrichedOnly, setShowEnrichedOnly] = useState(values.showEnrichedOnly);
+
+  const DOM_OPTIONS: { label: string; value: number | null }[] = [
+    { label: "Any", value: null },
+    { label: "≤30d",  value: 30  },
+    { label: "≤60d",  value: 60  },
+    { label: "≤90d",  value: 90  },
+    { label: "≤180d", value: 180 },
+    { label: "≤365d", value: 365 },
+  ];
 
   const reset = () => {
     setPriceMin(0); setPriceMax(2_000_000);
     setScoreMin(0); setScoreMax(100);
     setBedsMin(0);  setBathsMin(0);
+    setDomMax(null);
     setShowDistressedOnly(false);
     setShowSavedOnly(false);
     setShowEnrichedOnly(false);
@@ -136,7 +148,7 @@ export default function FilterPanel({
   };
 
   const apply = () => {
-    onApply({ priceMin, priceMax, scoreMin, scoreMax, bedsMin, bathsMin, showDistressedOnly, showSavedOnly, showEnrichedOnly });
+    onApply({ priceMin, priceMax, scoreMin, scoreMax, bedsMin, bathsMin, domMax, showDistressedOnly, showSavedOnly, showEnrichedOnly });
     onClose();
   };
 
@@ -259,6 +271,25 @@ export default function FilterPanel({
             </View>
           )}
 
+          {/* Days on market */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Max days on market</Text>
+            <Text style={styles.domHint}>Listings over 365 days may be off-market or stale</Text>
+            <View style={styles.domRow}>
+              {DOM_OPTIONS.map(opt => (
+                <TouchableOpacity
+                  key={String(opt.value)}
+                  style={[styles.domBtn, domMax === opt.value && styles.domBtnActive]}
+                  onPress={() => setDomMax(opt.value)}
+                >
+                  <Text style={[styles.domBtnText, domMax === opt.value && styles.domBtnTextActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
           {/* Other toggles */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Other</Text>
@@ -303,4 +334,10 @@ const styles = StyleSheet.create({
   saleTypeBtnActive: { backgroundColor: "#111", borderColor: "#111" },
   saleTypeBtnText: { fontSize: 14, color: "#374151" },
   saleTypeBtnTextActive: { color: "#fff", fontWeight: "600" },
+  domHint: { fontSize: 11, color: "#f59e0b", marginBottom: 10 },
+  domRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  domBtn: { borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 8, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: "#fff" },
+  domBtnActive: { backgroundColor: "#111", borderColor: "#111" },
+  domBtnText: { fontSize: 13, color: "#374151", fontWeight: "500" },
+  domBtnTextActive: { color: "#fff", fontWeight: "600" },
 });

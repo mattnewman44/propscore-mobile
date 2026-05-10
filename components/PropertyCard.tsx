@@ -76,7 +76,11 @@ export default function PropertyCard({ property, onPress, saved = false, onToggl
               </Text>
             </View>
           )}
-          {property.dom > 0 && (
+          {property._offMarket ? (
+            <View style={[styles.metaPill, { backgroundColor: "#f3f4f6" }]}>
+              <Text style={[styles.metaText, { color: "#6b7280", fontWeight: "600" }]}>Off Market</Text>
+            </View>
+          ) : property.dom > 0 && (
             <View style={[styles.metaPill, { backgroundColor: domStyle.backgroundColor }]}>
               <Text style={[styles.metaText, { color: domStyle.color, fontWeight: "500" }]}>{property.dom}d</Text>
             </View>

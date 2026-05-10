@@ -79,6 +79,16 @@ function mapApiDetail(detail: any, search: any, address: string) {
   const loc   = detail.location?.address || {};
   const desc  = detail.description || {};
   const isPriceReduced = !!(detail.flags?.is_price_reduced || search.flags?.is_price_reduced);
+
+  // Detect off-market: status field or stale list_date (>365 days ago with no active status)
+  const rawStatus = (detail.status || search.status || "").toLowerCase();
+  const ACTIVE_STATUSES = ["for_sale", "active", "for sale", "new_listing", "new listing", "price_reduced"];
+  const isActive = ACTIVE_STATUSES.some(s => rawStatus.includes(s)) || rawStatus === "";
+  const listDaysAgo = detail.list_date
+    ? Math.floor((Date.now() - new Date(detail.list_date).getTime()) / 86400000)
+    : 0;
+  const isOffMarket = !isActive || (!rawStatus && listDaysAgo > 365);
+
   const priceHistory = [{ date: "Current", price }];
   const history = detail.price_history || detail.listing_history || [];
   if (history.length > 0) {
@@ -94,7 +104,9 @@ function mapApiDetail(detail: any, search: any, address: string) {
     city: loc.city || "", state: loc.state_code || "", zip: loc.postal_code || "",
     lat: loc.coordinate?.lat || null, lng: loc.coordinate?.lon || null,
     price, bedrooms: desc.beds || 0, bathrooms: desc.baths || 0, sqft: desc.sqft || null,
-    dom: detail.list_date ? Math.floor((Date.now() - new Date(detail.list_date).getTime()) / 86400000) : 0,
+    dom: isOffMarket ? 0 : listDaysAgo,
+    _offMarket: isOffMarket,
+    mlsStatus: isOffMarket ? "OFF_MARKET" : (detail.status || "FOR_SALE"),
     priceHistory,
     avgCompPrice: detail.estimates?.current_values?.find((v: any) => v.isbest_homevalue)?.estimate || 0,
     listingRemarks: desc.text || "",
