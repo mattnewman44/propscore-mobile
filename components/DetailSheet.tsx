@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, Linking } from "react-native";
 import { useListings } from "../lib/ListingsContext";
 
@@ -21,16 +21,66 @@ function statColor(type: string, v: number | null) {
   return { bg:"#f5f5f3", border:"#e5e7eb", val:"#374151", note:"#9ca3af", bar:"#d1d5db" };
 }
 
-function SignalBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
-  const pct = Math.min(100, Math.round((value / max) * 100));
+const WEIGHT_STEPS = [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+
+function SignalBar({
+  label, baseValue, max, color, weight, onWeight,
+}: {
+  label: string; baseValue: number; max: number; color: string;
+  weight: number; onWeight: (w: number) => void;
+}) {
+  const basePct  = Math.min(100, Math.round((baseValue / max) * 100));
+  const boostVal = Math.min(max, baseValue * weight) - baseValue;
+  const boostPct = Math.max(0, Math.min(100 - basePct, Math.round((boostVal / max) * 100)));
+  const userVal  = Math.round(Math.min(max, baseValue * weight));
+
+  const stepDown = () => {
+    const idx = WEIGHT_STEPS.indexOf(weight);
+    if (idx > 0) onWeight(WEIGHT_STEPS[idx - 1]);
+  };
+  const stepUp = () => {
+    const idx = WEIGHT_STEPS.indexOf(weight);
+    if (idx < WEIGHT_STEPS.length - 1) onWeight(WEIGHT_STEPS[idx + 1]);
+  };
+
   return (
     <View style={sb.row}>
+      {/* Label row: name · base/max · weight badge */}
       <View style={sb.labelRow}>
         <Text style={sb.label}>{label}</Text>
-        <Text style={[sb.val, { color }]}>{value}</Text>
+        <View style={sb.rightRow}>
+          <Text style={[sb.val, { color }]}>{baseValue}<Text style={sb.maxTxt}>/{max}</Text></Text>
+          {weight !== 1 && (
+            <View style={[sb.weightBadge, { backgroundColor: color + "22", borderColor: color + "55" }]}>
+              <Text style={[sb.weightBadgeTxt, { color }]}>{weight}×</Text>
+            </View>
+          )}
+        </View>
       </View>
+
+      {/* Bar track: solid base + lighter boost */}
       <View style={sb.track}>
-        <View style={[sb.fill, { width: `${pct}%` as any, backgroundColor: color }]} />
+        <View style={[sb.fill, { width: `${basePct}%` as any, backgroundColor: color }]} />
+        {boostPct > 0 && (
+          <View style={[sb.fill, { width: `${boostPct}%` as any, backgroundColor: color + "50" }]} />
+        )}
+      </View>
+
+      {/* Weight controls */}
+      <View style={sb.weightRow}>
+        <Text style={sb.weightLabel}>Weight</Text>
+        <View style={sb.weightControls}>
+          <TouchableOpacity style={sb.wBtn} onPress={stepDown} disabled={weight === 0}>
+            <Text style={[sb.wBtnTxt, weight === 0 && { color: "#d1d5db" }]}>−</Text>
+          </TouchableOpacity>
+          <Text style={sb.wVal}>{weight === 1 ? "Default" : `${weight}×`}</Text>
+          <TouchableOpacity style={sb.wBtn} onPress={stepUp} disabled={weight === 2}>
+            <Text style={[sb.wBtnTxt, weight === 2 && { color: "#d1d5db" }]}>+</Text>
+          </TouchableOpacity>
+        </View>
+        {weight !== 1 && (
+          <Text style={[sb.userVal, { color }]}>→ {userVal}/{max}</Text>
+        )}
       </View>
     </View>
   );
@@ -57,12 +107,34 @@ function StatCompareBar({ abbr, label, type, raw, display, barMax, note }: any) 
 }
 
 const sb = StyleSheet.create({
-  row: { marginBottom: 10 },
-  labelRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
+  row: { marginBottom: 14 },
+  labelRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 5 },
+  rightRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   label: { fontSize: 13, color: "#374151" },
   val: { fontSize: 13, fontWeight: "600" },
-  track: { height: 6, backgroundColor: "#f3f4f6", borderRadius: 3, overflow: "hidden" },
-  fill: { height: 6, borderRadius: 3 },
+  maxTxt: { fontSize: 11, fontWeight: "400", color: "#9ca3af" },
+  track: { height: 7, backgroundColor: "#f3f4f6", borderRadius: 3.5, overflow: "hidden", flexDirection: "row" },
+  fill: { height: 7, borderRadius: 3.5 },
+  weightRow: { flexDirection: "row", alignItems: "center", marginTop: 5, gap: 8 },
+  weightLabel: { fontSize: 11, color: "#9ca3af", width: 40 },
+  weightControls: { flexDirection: "row", alignItems: "center", gap: 6 },
+  wBtn: { width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: "#e5e7eb", alignItems: "center", justifyContent: "center", backgroundColor: "#fff" },
+  wBtnTxt: { fontSize: 14, color: "#374151", lineHeight: 18 },
+  wVal: { fontSize: 11, color: "#374151", fontWeight: "600", minWidth: 52, textAlign: "center" },
+  userVal: { fontSize: 11, fontWeight: "700" },
+  weightBadge: { borderRadius: 4, borderWidth: 1, paddingHorizontal: 4, paddingVertical: 1 },
+  weightBadgeTxt: { fontSize: 10, fontWeight: "700" },
+  // score header
+  scoreHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+  scoreComparePill: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#f3f4f6", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  scoreCompareBase: { fontSize: 11, color: "#6b7280", fontWeight: "600" },
+  scoreCompareSep:  { fontSize: 11, color: "#9ca3af" },
+  scoreCompareUser: { fontSize: 11, fontWeight: "700" },
+  // legend
+  legend: { flexDirection: "row", gap: 14, marginTop: 10 },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  legendSwatch: { width: 12, height: 12, borderRadius: 3 },
+  legendTxt: { fontSize: 11, color: "#6b7280" },
 });
 
 const sc = StyleSheet.create({
@@ -84,9 +156,30 @@ interface Props {
   onToggleSaved?: () => void;
 }
 
+const SIGNAL_CONFIG = [
+  { key: "dom",             label: "Days on market",    max: 25 },
+  { key: "priceReductions", label: "Price reductions",  max: 20 },
+  { key: "priceVsComps",    label: "Price vs comps",    max: 20 },
+  { key: "inventory",       label: "Inventory",         max: 15 },
+  { key: "sellerMotivation",label: "Seller motivation", max: 15 },
+];
+
+const DEFAULT_WEIGHTS = { dom: 1, priceReductions: 1, priceVsComps: 1, inventory: 1, sellerMotivation: 1 };
+
 export default function DetailSheet({ property, onClose, saved = false, onToggleSaved }: Props) {
   const { marketStats, avgCutPct, avgDOM } = useListings();
+  const [userWeights, setUserWeights] = useState<Record<string, number>>(DEFAULT_WEIGHTS);
+
   if (!property) return null;
+
+  const setWeight = (key: string, w: number) => setUserWeights(prev => ({ ...prev, [key]: w }));
+
+  // Compute user score from base signals + user weights
+  const baseSignals = property.signals || {};
+  const userRaw = SIGNAL_CONFIG.reduce((sum, s) => sum + (baseSignals[s.key] || 0) * userWeights[s.key], 0);
+  const userMaxPossible = SIGNAL_CONFIG.reduce((sum, s) => sum + s.max * userWeights[s.key], 0);
+  const userScore = userMaxPossible > 0 ? Math.round((userRaw / userMaxPossible) * 100) : property.score;
+  const hasCustomWeights = Object.entries(userWeights).some(([k, v]) => v !== (DEFAULT_WEIGHTS as any)[k]);
 
   const g = GRADE[property.grade as keyof typeof GRADE] || GRADE.low;
   const ph = property.priceHistory || [];
@@ -224,12 +317,68 @@ export default function DetailSheet({ property, onClose, saved = false, onToggle
 
         {/* Signal breakdown */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Signal breakdown</Text>
-          <SignalBar label="Days on market"    value={property.signals?.dom || 0}              max={25} color={g.dot} />
-          <SignalBar label="Price reductions"  value={property.signals?.priceReductions || 0}  max={20} color={g.dot} />
-          <SignalBar label="Price vs comps"    value={property.signals?.priceVsComps || 0}     max={20} color={g.dot} />
-          <SignalBar label="Inventory"         value={property.signals?.inventory || 0}        max={15} color={g.dot} />
-          <SignalBar label="Seller motivation" value={property.signals?.sellerMotivation || 0} max={15} color={g.dot} />
+          <View style={sb.scoreHeaderRow}>
+            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Signal breakdown</Text>
+            {hasCustomWeights && (
+              <View style={sb.scoreComparePill}>
+                <Text style={sb.scoreCompareBase}>PropScore: {property.score}</Text>
+                <Text style={sb.scoreCompareSep}>→</Text>
+                <Text style={[sb.scoreCompareUser, { color: g.dot }]}>Your Score: {userScore}</Text>
+              </View>
+            )}
+          </View>
+          <SignalBar
+            label="Days on market"
+            baseValue={property.signals?.dom || 0}
+            max={25}
+            color={g.dot}
+            weight={userWeights.dom}
+            onWeight={w => setWeight("dom", w)}
+          />
+          <SignalBar
+            label="Price reductions"
+            baseValue={property.signals?.priceReductions || 0}
+            max={20}
+            color={g.dot}
+            weight={userWeights.priceReductions}
+            onWeight={w => setWeight("priceReductions", w)}
+          />
+          <SignalBar
+            label="Price vs comps"
+            baseValue={property.signals?.priceVsComps || 0}
+            max={20}
+            color={g.dot}
+            weight={userWeights.priceVsComps}
+            onWeight={w => setWeight("priceVsComps", w)}
+          />
+          <SignalBar
+            label="Inventory"
+            baseValue={property.signals?.inventory || 0}
+            max={15}
+            color={g.dot}
+            weight={userWeights.inventory}
+            onWeight={w => setWeight("inventory", w)}
+          />
+          <SignalBar
+            label="Seller motivation"
+            baseValue={property.signals?.sellerMotivation || 0}
+            max={15}
+            color={g.dot}
+            weight={userWeights.sellerMotivation}
+            onWeight={w => setWeight("sellerMotivation", w)}
+          />
+
+          {/* Legend */}
+          <View style={sb.legend}>
+            <View style={sb.legendItem}>
+              <View style={[sb.legendSwatch, { backgroundColor: g.dot }]} />
+              <Text style={sb.legendTxt}>PropScore</Text>
+            </View>
+            <View style={sb.legendItem}>
+              <View style={[sb.legendSwatch, { backgroundColor: g.dot + "50" }]} />
+              <Text style={sb.legendTxt}>User Score</Text>
+            </View>
+          </View>
         </View>
 
         {/* Metro Market vs This Property */}
