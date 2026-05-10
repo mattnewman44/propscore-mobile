@@ -1,12 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { scoreProperty, DEFAULT_WEIGHTS } from "./scoring";
 
 const SUPABASE_URL = "https://bdkawkitoixkymnoinyl.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJka2F3a2l0b2l4a3ltbm9pbnlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MTA0MDIsImV4cCI6MjA5MzQ4NjQwMn0.by3vbYc-ARhscJo3meuxRTmTN4L1ECZWOs9xbkr9q_0";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { storage: AsyncStorage, autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
 });
 
 export const API_BASE = "https://distressed-property-finder-v2.vercel.app";
