@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View, Text, FlatList, TouchableOpacity,
   StyleSheet, SafeAreaView, Modal, ActivityIndicator, StatusBar,
@@ -9,8 +9,14 @@ import FilterPanel, { FilterValues } from "../../components/FilterPanel";
 import AddressSearch from "../../components/AddressSearch";
 import MarketStatsBar from "../../components/MarketStatsBar";
 import PropScoreLogo from "../../components/PropScoreLogo";
+import SaveSearchModal from "../../components/SaveSearchModal";
+import SavedSearchesModal from "../../components/SavedSearchesModal";
 import { searchByAddress, enrichByAddress } from "../../lib/data";
 import { useListings } from "../../lib/ListingsContext";
+import {
+  loadSavedSearches, persistSavedSearches,
+  type SavedSearch, type AlertFreq,
+} from "../../lib/savedSearches";
 
 const DEFAULT_FILTERS: FilterValues = {
   priceMin: 0, priceMax: 2_000_000,
@@ -38,15 +44,27 @@ const GRADE_BTNS = [
 export default function HomeScreen() {
   const { listings, loading, savedHomes, toggleSaved, updateListing, marketStats } = useListings();
 
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [selected, setSelected]           = useState<any>(null);
-  const [sortBy, setSortBy]               = useState<"score" | "price" | "dom">("score");
-  const [sortDir, setSortDir]             = useState<"desc" | "asc">("desc");
-  const [gradeFilter, setGradeFilter]     = useState<string | null>(null);
-  const [filters, setFilters]             = useState<FilterValues>(DEFAULT_FILTERS);
-  const [showFilters, setShowFilters]     = useState(false);
+  const [searchLoading, setSearchLoading]   = useState(false);
+  const [selected, setSelected]             = useState<any>(null);
+  const [sortBy, setSortBy]                 = useState<"score" | "price" | "dom">("score");
+  const [sortDir, setSortDir]               = useState<"desc" | "asc">("desc");
+  const [gradeFilter, setGradeFilter]       = useState<string | null>(null);
+  const [filters, setFilters]               = useState<FilterValues>(DEFAULT_FILTERS);
+  const [showFilters, setShowFilters]       = useState(false);
   const [saleTypeFilter, setSaleTypeFilter] = useState<string | null>(null);
-  const [listLimit, setListLimit]         = useState(50);
+  const [listLimit, setListLimit]           = useState(50);
+
+  // Save Search state
+  const [savedSearches, setSavedSearches]     = useState<SavedSearch[]>([]);
+  const [showSaveModal, setShowSaveModal]     = useState(false);
+  const [showSearchesModal, setShowSearchesModal] = useState(false);
+  const [editingSearch, setEditingSearch]     = useState<SavedSearch | null>(null);
+  const [activeSearchId, setActiveSearchId]   = useState<string | null>(null);
+
+  // Load saved searches on mount
+  useEffect(() => {
+    loadSavedSearches().then(setSavedSearches);
+  }, []);
 
   const handleSearch = useCallback(async (address: string) => {
     setSearchLoading(true);
@@ -54,7 +72,6 @@ export default function HomeScreen() {
       const result = await searchByAddress(address);
       if (result) {
         setSelected(result);
-        // Stale-while-revalidate: if from Supabase cache, enrich in background
         if (result._searchSource === "database") {
           enrichByAddress(result).then(fields => {
             if (!fields) return;
@@ -74,6 +91,77 @@ export default function HomeScreen() {
       setSearchLoading(false);
     }
   }, [updateListing]);
+
+  // ── Save Search handlers ────────────────────────────────────────────────
+
+  const captureCurrentState = () => ({
+    filters,
+    saleTypeFilter,
+    gradeFilter,
+    sortBy,
+    sortDir,
+  });
+
+  const handleSaveSearch = useCallback((name: string, alertFreq: AlertFreq) => {
+    const state = captureCurrentState();
+    setSavedSearches(prev => {
+      // If editing an existing search, update it
+      if (editingSearch) {
+        const updated = prev.map(s =>
+          s.id === editingSearch.id
+            ? { ...s, name, alertFreq, ...state }
+            : s
+        );
+        persistSavedSearches(updated);
+        return updated;
+      }
+      // Otherwise create new
+      const newSearch: SavedSearch = {
+        id: `search_${Date.now()}`,
+        name,
+        alertFreq,
+        createdAt: Date.now(),
+        ...state,
+      };
+      const updated = [newSearch, ...prev];
+      persistSavedSearches(updated);
+      setActiveSearchId(newSearch.id);
+      return updated;
+    });
+    setEditingSearch(null);
+  }, [filters, saleTypeFilter, gradeFilter, sortBy, sortDir, editingSearch]);
+
+  const handleApplySearch = useCallback((s: SavedSearch) => {
+    setFilters(s.filters);
+    setSaleTypeFilter(s.saleTypeFilter);
+    setGradeFilter(s.gradeFilter);
+    setSortBy(s.sortBy);
+    setSortDir(s.sortDir);
+    setActiveSearchId(s.id);
+    setListLimit(50);
+  }, []);
+
+  const handleDeleteSearch = useCallback((id: string) => {
+    setSavedSearches(prev => {
+      const updated = prev.filter(s => s.id !== id);
+      persistSavedSearches(updated);
+      return updated;
+    });
+    if (activeSearchId === id) setActiveSearchId(null);
+  }, [activeSearchId]);
+
+  const handleEditSearch = useCallback((s: SavedSearch) => {
+    setEditingSearch(s);
+    setShowSearchesModal(false);
+    setShowSaveModal(true);
+  }, []);
+
+  const openSaveModal = () => {
+    setEditingSearch(null);
+    setShowSaveModal(true);
+  };
+
+  // ── Filtering / sorting ─────────────────────────────────────────────────
 
   const toggleSort = (col: "score" | "price" | "dom") => {
     if (sortBy === col) setSortDir(d => d === "desc" ? "asc" : "desc");
@@ -115,6 +203,7 @@ export default function HomeScreen() {
     setSaleTypeFilter(null);
     setSortBy("score");
     setSortDir("desc");
+    setActiveSearchId(null);
   };
 
   return (
@@ -151,6 +240,20 @@ export default function HomeScreen() {
             <Text style={[styles.pillText, gradeFilter === g.key && { color: g.color, fontWeight: "600" }]}>{g.label}</Text>
           </TouchableOpacity>
         ))}
+      </View>
+
+      {/* Save Search row */}
+      <View style={styles.saveRow}>
+        <TouchableOpacity style={styles.saveBtn} onPress={openSaveModal}>
+          <Text style={styles.saveBtnText}>🔖 Save Search</Text>
+        </TouchableOpacity>
+        {savedSearches.length > 0 && (
+          <TouchableOpacity style={styles.savedBtn} onPress={() => setShowSearchesModal(true)}>
+            <Text style={styles.savedBtnText}>
+              Saved ({savedSearches.length}){activeSearchId ? " ●" : ""}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Sort row */}
@@ -241,10 +344,29 @@ export default function HomeScreen() {
         visible={showFilters}
         onClose={() => setShowFilters(false)}
         values={filters}
-        onApply={setFilters}
+        onApply={v => { setFilters(v); setActiveSearchId(null); }}
         saleTypeFilter={saleTypeFilter}
-        onSaleTypeFilter={setSaleTypeFilter}
+        onSaleTypeFilter={k => { setSaleTypeFilter(k); setActiveSearchId(null); }}
         saleTypeOptions={SALE_TYPE_OPTIONS}
+      />
+
+      {/* Save Search modal */}
+      <SaveSearchModal
+        visible={showSaveModal}
+        onClose={() => { setShowSaveModal(false); setEditingSearch(null); }}
+        existing={editingSearch}
+        onSave={handleSaveSearch}
+      />
+
+      {/* Saved Searches list modal */}
+      <SavedSearchesModal
+        visible={showSearchesModal}
+        onClose={() => setShowSearchesModal(false)}
+        searches={savedSearches}
+        onApply={handleApplySearch}
+        onDelete={handleDeleteSearch}
+        onEdit={handleEditSearch}
+        activeId={activeSearchId}
       />
     </SafeAreaView>
   );
@@ -260,6 +382,11 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 12, color: "#374151", fontWeight: "500" },
   pillTextActive: { color: "#fff", fontWeight: "600" },
   gradeDot: { width: 6, height: 6, borderRadius: 3 },
+  saveRow: { flexDirection: "row", paddingHorizontal: 12, paddingBottom: 6, gap: 8 },
+  saveBtn: { borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: "#fff" },
+  saveBtnText: { fontSize: 12, color: "#374151", fontWeight: "500" },
+  savedBtn: { borderWidth: 1, borderColor: "#2563eb", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: "#eff6ff" },
+  savedBtnText: { fontSize: 12, color: "#2563eb", fontWeight: "600" },
   sortRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, paddingBottom: 6 },
   sortBtns: { flexDirection: "row", backgroundColor: "#f3f4f6", borderRadius: 8, padding: 2 },
   sortBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
