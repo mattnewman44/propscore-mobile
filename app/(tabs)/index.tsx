@@ -9,7 +9,7 @@ import FilterPanel, { FilterValues } from "../../components/FilterPanel";
 import AddressSearch from "../../components/AddressSearch";
 import MarketStatsBar from "../../components/MarketStatsBar";
 import PropScoreLogo from "../../components/PropScoreLogo";
-import { searchByAddress } from "../../lib/data";
+import { searchByAddress, enrichByAddress } from "../../lib/data";
 import { useListings } from "../../lib/ListingsContext";
 
 const DEFAULT_FILTERS: FilterValues = {
@@ -36,7 +36,7 @@ const GRADE_BTNS = [
 ];
 
 export default function HomeScreen() {
-  const { listings, loading, savedHomes, toggleSaved, marketStats } = useListings();
+  const { listings, loading, savedHomes, toggleSaved, updateListing, marketStats } = useListings();
 
   const [searchLoading, setSearchLoading] = useState(false);
   const [selected, setSelected]           = useState<any>(null);
@@ -52,14 +52,28 @@ export default function HomeScreen() {
     setSearchLoading(true);
     try {
       const result = await searchByAddress(address);
-      if (result) setSelected(result);
-      else alert("Property not found. Try a full address like '1505 SE 36th St, Cape Coral, FL'");
+      if (result) {
+        setSelected(result);
+        // Stale-while-revalidate: if from Supabase cache, enrich in background
+        if (result._searchSource === "database") {
+          enrichByAddress(result).then(fields => {
+            if (!fields) return;
+            setSelected(prev => {
+              if (!prev || String(prev.id) !== String(result.id)) return prev;
+              return { ...prev, ...fields };
+            });
+            updateListing(String(result.id), fields);
+          });
+        }
+      } else {
+        alert("Property not found. Try a full address like '1505 SE 36th St, Cape Coral, FL'");
+      }
     } catch {
       alert("Search failed. Check your connection and try again.");
     } finally {
       setSearchLoading(false);
     }
-  }, []);
+  }, [updateListing]);
 
   const toggleSort = (col: "score" | "price" | "dom") => {
     if (sortBy === col) setSortDir(d => d === "desc" ? "asc" : "desc");

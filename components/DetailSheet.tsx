@@ -120,6 +120,12 @@ export default function DetailSheet({ property, onClose, saved = false, onToggle
       <View style={styles.header}>
         <Text style={styles.headerTitle} numberOfLines={1} ellipsizeMode="tail">{property.address}</Text>
         <View style={styles.headerRight}>
+          {property._refreshing && (
+            <Text style={styles.refreshing}>⟳ Refreshing…</Text>
+          )}
+          {property._refreshedAt && !property._refreshing && (
+            <Text style={styles.refreshed}>↻ Refreshed</Text>
+          )}
           {onToggleSaved && (
             <TouchableOpacity onPress={onToggleSaved} hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}>
               <Text style={styles.heart}>{saved ? "❤️" : "🤍"}</Text>
@@ -237,6 +243,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 0.5, borderColor: "#e5e7eb" },
   headerTitle: { flex: 1, fontSize: 15, fontWeight: "700", color: "#111", marginRight: 12 },
   headerRight: { flexDirection: "row", alignItems: "center", gap: 12 },
+  refreshing: { fontSize: 11, color: "#6b7280" },
+  refreshed:  { fontSize: 11, color: "#15803d", fontWeight: "600" },
   heart: { fontSize: 18 },
   closeBtn: { fontSize: 18, color: "#6b7280" },
   scroll: { flex: 1 },

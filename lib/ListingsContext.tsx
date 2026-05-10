@@ -7,6 +7,7 @@ interface ListingsContextType {
   loading: boolean;
   savedHomes: Set<string>;
   toggleSaved: (id: string) => void;
+  updateListing: (id: string, fields: Partial<any>) => void;
   marketStats: any[];
   avgCutPct: number;
   avgDOM: number | null;
@@ -17,6 +18,7 @@ const ListingsContext = createContext<ListingsContextType>({
   loading: true,
   savedHomes: new Set(),
   toggleSaved: () => {},
+  updateListing: () => {},
   marketStats: [],
   avgCutPct: 0,
   avgDOM: null,
@@ -42,6 +44,10 @@ export function ListingsProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const updateListing = useCallback((id: string, fields: Partial<any>) => {
+    setListings(prev => prev.map(l => String(l.id) === id ? { ...l, ...fields } : l));
+  }, []);
+
   const marketStats = computeMarketStats(listings, MOCK_MARKET.monthsSupply);
 
   const allWithCuts = listings.filter(p => p.pricecuts > 0);
@@ -58,7 +64,7 @@ export function ListingsProvider({ children }: { children: React.ReactNode }) {
     : null;
 
   return (
-    <ListingsContext.Provider value={{ listings, loading, savedHomes, toggleSaved, marketStats, avgCutPct, avgDOM }}>
+    <ListingsContext.Provider value={{ listings, loading, savedHomes, toggleSaved, updateListing, marketStats, avgCutPct, avgDOM }}>
       {children}
     </ListingsContext.Provider>
   );

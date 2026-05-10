@@ -4,6 +4,39 @@ import {
   ScrollView, SafeAreaView, Switch,
 } from "react-native";
 import Slider from "@react-native-community/slider";
+import { useListings } from "../lib/ListingsContext";
+
+// Price histogram bins (0–2M in 200k steps)
+const BINS = [0, 200_000, 400_000, 600_000, 800_000, 1_000_000, 1_200_000, 1_400_000, 1_600_000, 1_800_000, 2_000_000];
+
+function PriceHistogram({ priceMin, priceMax }: { priceMin: number; priceMax: number }) {
+  const { listings } = useListings();
+  const counts = BINS.slice(0, -1).map((lo, i) => {
+    const hi = BINS[i + 1];
+    return listings.filter(p => p.price >= lo && p.price < hi).length;
+  });
+  const maxCount = Math.max(...counts, 1);
+  return (
+    <View style={hist.row}>
+      {BINS.slice(0, -1).map((lo, i) => {
+        const hi = BINS[i + 1];
+        const inRange = lo < priceMax && hi > priceMin;
+        const barH = Math.max(3, Math.round((counts[i] / maxCount) * 44));
+        return (
+          <View key={lo} style={hist.bin}>
+            <View style={[hist.bar, { height: barH, backgroundColor: inRange ? "#2563eb" : "#d1d5db" }]} />
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+const hist = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "flex-end", height: 48, marginBottom: 6 },
+  bin: { flex: 1, alignItems: "center", justifyContent: "flex-end" },
+  bar: { width: "70%", borderRadius: 2 },
+});
 
 export interface FilterValues {
   priceMin: number;
@@ -130,6 +163,7 @@ export default function FilterPanel({
               <Text style={styles.rangeSep}>–</Text>
               <Text style={styles.rangeVal}>{priceMax >= 2_000_000 ? "$2M+" : fmtPrice(priceMax)}</Text>
             </View>
+            <PriceHistogram priceMin={priceMin} priceMax={priceMax} />
             <Text style={styles.sliderLabel}>Min price</Text>
             <Slider
               style={styles.slider}

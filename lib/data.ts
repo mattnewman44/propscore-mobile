@@ -75,17 +75,10 @@ export async function fetchListings() {
   return all.map(mapRow).map(p => scoreProperty(p, MOCK_MARKET, [], DEFAULT_WEIGHTS));
 }
 
-export async function searchByAddress(address: string) {
-  const res = await fetch(`${API_BASE}/api/property-search?address=${encodeURIComponent(address)}`);
-  const json = await res.json();
-  if (json.error || !json.detail) return null;
-
-  const detail = json.detail;
-  const search = json.search || {};
+function mapApiDetail(detail: any, search: any, address: string) {
   const price = detail.list_price || search.list_price || 0;
-  const loc = detail.location?.address || {};
-  const desc = detail.description || {};
-
+  const loc   = detail.location?.address || {};
+  const desc  = detail.description || {};
   const isPriceReduced = !!(detail.flags?.is_price_reduced || search.flags?.is_price_reduced);
   const priceHistory = [{ date: "Current", price }];
   const history = detail.price_history || detail.listing_history || [];
@@ -96,29 +89,78 @@ export async function searchByAddress(address: string) {
     const orig = detail.list_price_max || detail.original_list_price;
     if (orig && orig > price && orig <= price * 1.4) priceHistory.unshift({ date: "List price", price: orig });
   }
-
-  const raw = {
+  return {
     id: detail.property_id || address,
     address: loc.line || address,
-    city: loc.city || "",
-    state: loc.state_code || "",
-    zip: loc.postal_code || "",
-    lat: detail.location?.address?.lat || null,
-    lng: detail.location?.address?.lon || null,
-    price,
-    bedrooms: desc.beds || 0,
-    bathrooms: desc.baths || 0,
-    sqft: desc.sqft || null,
+    city: loc.city || "", state: loc.state_code || "", zip: loc.postal_code || "",
+    lat: loc.coordinate?.lat || null, lng: loc.coordinate?.lon || null,
+    price, bedrooms: desc.beds || 0, bathrooms: desc.baths || 0, sqft: desc.sqft || null,
     dom: detail.list_date ? Math.floor((Date.now() - new Date(detail.list_date).getTime()) / 86400000) : 0,
     priceHistory,
     avgCompPrice: detail.estimates?.current_values?.find((v: any) => v.isbest_homevalue)?.estimate || 0,
     listingRemarks: desc.text || "",
+    floodZone: detail.local?.flood?.fema_zone?.[0] || null,
+    avm_estimate: detail.estimates?.current_values?.find((v: any) => v.isbest_homevalue)?.estimate || null,
+    last_sold_price: detail.last_sold_price || null, last_sold_date: detail.last_sold_date || null,
+    photo_url: detail.photos?.[0]?.href?.replace(/s\.jpg$/, "od-w1024_h768.jpg") || null,
+    brokerage: detail.branding?.[1]?.name || null,
     is_foreclosure: !!(detail.flags?.is_foreclosure || search.flags?.is_foreclosure),
     is_price_reduced: isPriceReduced,
     vacant: false, probate: false, failedListing: isPriceReduced,
-    photo_url: detail.primary_photo?.href || null,
-    enriched: true, source: "api",
+    enriched: true, source: "api", _searchSource: "api",
   };
+}
 
+export async function searchByAddress(address: string) {
+  // Step 1: Try Supabase by address string (fast, cached)
+  const streetPart = address.split(",")[0].trim();
+  if (streetPart.length >= 4) {
+    const { data } = await supabase
+      .from("listings")
+      .select("*")
+      .ilike("address", `%${streetPart}%`)
+      .limit(5);
+    if (data && data.length > 0) {
+      const scored = scoreProperty(mapRow(data[0]), MOCK_MARKET, [], DEFAULT_WEIGHTS);
+      return { ...scored, _searchSource: "database", _refreshing: true };
+    }
+  }
+
+  // Step 2: Fall back to Realtor.com API
+  const res  = await fetch(`${API_BASE}/api/property-search?address=${encodeURIComponent(address)}`);
+  const json = await res.json();
+  if (json.error || !json.detail) return null;
+  const raw = mapApiDetail(json.detail, json.search || {}, address);
   return scoreProperty(raw, MOCK_MARKET, [], DEFAULT_WEIGHTS);
+}
+
+// Background enrichment — call after showing a cached Supabase result
+export async function enrichByAddress(prop: any): Promise<Partial<any> | null> {
+  try {
+    const lat = prop.lat;
+    const lng = prop.lng;
+    const addr = [prop.address, prop.city, prop.state].filter(Boolean).join(", ");
+    const coordParams = lat != null && lng != null ? `lat=${lat}&lng=${lng}&` : "";
+    const addrParam   = `address=${encodeURIComponent(addr)}`;
+    const res  = await fetch(`${API_BASE}/api/property-search?${coordParams}${addrParam}`);
+    const json = await res.json();
+    if (!json.detail) return null;
+    const d = json.detail;
+    return {
+      sqft:            d.description?.sqft                                                   ?? prop.sqft,
+      listingRemarks:  d.description?.text                                                   ?? prop.listingRemarks,
+      floodZone:       d.local?.flood?.fema_zone?.[0]                                        ?? prop.floodZone,
+      avm_estimate:    d.estimates?.current_values?.find((v: any) => v.isbest_homevalue)?.estimate ?? prop.avm_estimate,
+      last_sold_price: d.last_sold_price                                                     ?? prop.last_sold_price,
+      last_sold_date:  d.last_sold_date                                                      ?? prop.last_sold_date,
+      photo_url:       d.photos?.[0]?.href?.replace(/s\.jpg$/, "od-w1024_h768.jpg")         ?? prop.photo_url,
+      brokerage:       d.branding?.[1]?.name                                                 ?? prop.brokerage,
+      price:           d.list_price                                                          || prop.price,
+      enriched:        true,
+      _refreshedAt:    Date.now(),
+      _refreshing:     false,
+    };
+  } catch {
+    return null;
+  }
 }
