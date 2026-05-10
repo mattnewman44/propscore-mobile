@@ -1,16 +1,20 @@
 import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal,
-  ScrollView, SafeAreaView,
+  ScrollView, SafeAreaView, Switch,
 } from "react-native";
 import Slider from "@react-native-community/slider";
 
-interface FilterValues {
+export interface FilterValues {
   priceMin: number;
   priceMax: number;
   scoreMin: number;
   scoreMax: number;
   bedsMin: number;
+  bathsMin: number;
+  showDistressedOnly: boolean;
+  showSavedOnly: boolean;
+  showEnrichedOnly: boolean;
 }
 
 interface Props {
@@ -29,25 +33,79 @@ function fmtPrice(n: number) {
   return `$${n}`;
 }
 
-export default function FilterPanel({ visible, onClose, values, onApply, saleTypeFilter, onSaleTypeFilter, saleTypeOptions = [] }: Props) {
-  const [priceMin, setPriceMin] = useState(values.priceMin);
-  const [priceMax, setPriceMax] = useState(values.priceMax);
-  const [scoreMin, setScoreMin] = useState(values.scoreMin);
-  const [scoreMax, setScoreMax] = useState(values.scoreMax);
-  const [bedsMin, setBedsMin] = useState(values.bedsMin);
+function Stepper({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <View style={step.row}>
+      <Text style={step.label}>{label}</Text>
+      <View style={step.controls}>
+        <TouchableOpacity style={step.btn} onPress={() => onChange(Math.max(0, value - 1))}>
+          <Text style={step.btnText}>−</Text>
+        </TouchableOpacity>
+        <Text style={step.val}>{value === 0 ? "Any" : `${value}+`}</Text>
+        <TouchableOpacity style={step.btn} onPress={() => onChange(value + 1)}>
+          <Text style={step.btnText}>+</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const step = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 10 },
+  label: { fontSize: 15, color: "#111", fontWeight: "500" },
+  controls: { flexDirection: "row", alignItems: "center", gap: 16 },
+  btn: { width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: "#e5e7eb", alignItems: "center", justifyContent: "center" },
+  btnText: { fontSize: 18, color: "#111", lineHeight: 22 },
+  val: { fontSize: 15, fontWeight: "600", color: "#111", minWidth: 40, textAlign: "center" },
+});
+
+function ToggleRow({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <View style={tog.row}>
+      <Text style={tog.label}>{label}</Text>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ false: "#e5e7eb", true: "#111" }}
+        thumbColor="#fff"
+      />
+    </View>
+  );
+}
+
+const tog = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, borderBottomWidth: 0.5, borderColor: "#f3f4f6" },
+  label: { fontSize: 15, color: "#111" },
+});
+
+export default function FilterPanel({
+  visible, onClose, values, onApply,
+  saleTypeFilter, onSaleTypeFilter, saleTypeOptions = [],
+}: Props) {
+  const [priceMin, setPriceMin]                 = useState(values.priceMin);
+  const [priceMax, setPriceMax]                 = useState(values.priceMax);
+  const [scoreMin, setScoreMin]                 = useState(values.scoreMin);
+  const [scoreMax, setScoreMax]                 = useState(values.scoreMax);
+  const [bedsMin, setBedsMin]                   = useState(values.bedsMin);
+  const [bathsMin, setBathsMin]                 = useState(values.bathsMin);
+  const [showDistressedOnly, setShowDistressedOnly] = useState(values.showDistressedOnly);
+  const [showSavedOnly, setShowSavedOnly]       = useState(values.showSavedOnly);
+  const [showEnrichedOnly, setShowEnrichedOnly] = useState(values.showEnrichedOnly);
 
   const reset = () => {
     setPriceMin(0); setPriceMax(2_000_000);
     setScoreMin(0); setScoreMax(100);
-    setBedsMin(0);
+    setBedsMin(0);  setBathsMin(0);
+    setShowDistressedOnly(false);
+    setShowSavedOnly(false);
+    setShowEnrichedOnly(false);
+    onSaleTypeFilter?.(null);
   };
 
   const apply = () => {
-    onApply({ priceMin, priceMax, scoreMin, scoreMax, bedsMin });
+    onApply({ priceMin, priceMax, scoreMin, scoreMax, bedsMin, bathsMin, showDistressedOnly, showSavedOnly, showEnrichedOnly });
     onClose();
   };
-
-  const BEDS = [0, 1, 2, 3, 4, 5];
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -107,7 +165,7 @@ export default function FilterPanel({ visible, onClose, values, onApply, saleTyp
               <Text style={styles.rangeVal}>{scoreMax}</Text>
             </View>
             <View style={styles.scoreTrack}>
-              <View style={[styles.scoreBar, { left: `${scoreMin}%`, right: `${100 - scoreMax}%` }]} />
+              <View style={[styles.scoreBar, { left: `${scoreMin}%` as any, right: `${100 - scoreMax}%` as any }]} />
             </View>
             <Text style={styles.sliderLabel}>Min score</Text>
             <Slider
@@ -135,22 +193,11 @@ export default function FilterPanel({ visible, onClose, values, onApply, saleTyp
             />
           </View>
 
-          {/* Beds */}
+          {/* Beds & Baths */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Minimum bedrooms</Text>
-            <View style={styles.bedRow}>
-              {BEDS.map(b => (
-                <TouchableOpacity
-                  key={b}
-                  style={[styles.bedBtn, bedsMin === b && styles.bedBtnActive]}
-                  onPress={() => setBedsMin(b)}
-                >
-                  <Text style={[styles.bedBtnText, bedsMin === b && styles.bedBtnTextActive]}>
-                    {b === 0 ? "Any" : `${b}+`}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <Text style={styles.sectionTitle}>Beds & Baths</Text>
+            <Stepper label="Bedrooms"  value={bedsMin}  onChange={setBedsMin}  />
+            <Stepper label="Bathrooms" value={bathsMin} onChange={setBathsMin} />
           </View>
 
           {/* Sale type */}
@@ -158,12 +205,12 @@ export default function FilterPanel({ visible, onClose, values, onApply, saleTyp
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Sale type</Text>
               <TouchableOpacity
-                style={[styles.bedBtn, !saleTypeFilter && styles.bedBtnActive]}
+                style={[styles.saleTypeBtn, !saleTypeFilter && styles.saleTypeBtnActive]}
                 onPress={() => onSaleTypeFilter?.(null)}
               >
-                <Text style={[styles.bedBtnText, !saleTypeFilter && styles.bedBtnTextActive]}>Any</Text>
+                <Text style={[styles.saleTypeBtnText, !saleTypeFilter && styles.saleTypeBtnTextActive]}>Any</Text>
               </TouchableOpacity>
-              <View style={{ height: 8 }} />
+              <View style={{ height: 6 }} />
               {saleTypeOptions.map(opt => (
                 <TouchableOpacity
                   key={opt.key}
@@ -177,6 +224,14 @@ export default function FilterPanel({ visible, onClose, values, onApply, saleTyp
               ))}
             </View>
           )}
+
+          {/* Other toggles */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Other</Text>
+            <ToggleRow label="Distressed only (High + Med)" value={showDistressedOnly} onChange={setShowDistressedOnly} />
+            <ToggleRow label="Saved listings only"         value={showSavedOnly}       onChange={setShowSavedOnly} />
+            <ToggleRow label="Enriched listings only"      value={showEnrichedOnly}    onChange={setShowEnrichedOnly} />
+          </View>
 
           <View style={{ height: 20 }} />
         </ScrollView>
@@ -199,7 +254,7 @@ const styles = StyleSheet.create({
   reset: { fontSize: 15, color: "#2563eb", fontWeight: "600" },
   scroll: { flex: 1 },
   section: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 8, borderBottomWidth: 0.5, borderColor: "#f3f4f6" },
-  sectionTitle: { fontSize: 15, fontWeight: "700", color: "#111", marginBottom: 12 },
+  sectionTitle: { fontSize: 12, fontWeight: "700", color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 },
   rangeLabels: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
   rangeVal: { fontSize: 16, fontWeight: "600", color: "#111" },
   rangeSep: { fontSize: 14, color: "#9ca3af" },
@@ -207,11 +262,6 @@ const styles = StyleSheet.create({
   slider: { width: "100%", height: 40 },
   scoreTrack: { height: 6, backgroundColor: "#f3f4f6", borderRadius: 3, marginBottom: 8, position: "relative", overflow: "hidden" },
   scoreBar: { position: "absolute", top: 0, bottom: 0, backgroundColor: "#dc2626", opacity: 0.3 },
-  bedRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-  bedBtn: { borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#fff" },
-  bedBtnActive: { backgroundColor: "#111", borderColor: "#111" },
-  bedBtnText: { fontSize: 14, color: "#374151" },
-  bedBtnTextActive: { color: "#fff", fontWeight: "600" },
   footer: { padding: 16, borderTopWidth: 0.5, borderColor: "#e5e7eb" },
   applyBtn: { backgroundColor: "#111", borderRadius: 12, padding: 16, alignItems: "center" },
   applyBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },

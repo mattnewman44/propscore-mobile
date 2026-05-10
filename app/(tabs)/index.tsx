@@ -1,18 +1,26 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View, Text, FlatList, TouchableOpacity,
   StyleSheet, SafeAreaView, Modal, ActivityIndicator, StatusBar,
 } from "react-native";
 import PropertyCard from "../../components/PropertyCard";
 import DetailSheet from "../../components/DetailSheet";
-import FilterPanel from "../../components/FilterPanel";
+import FilterPanel, { FilterValues } from "../../components/FilterPanel";
 import AddressSearch from "../../components/AddressSearch";
 import MarketStatsBar from "../../components/MarketStatsBar";
-import { fetchListings, searchByAddress } from "../../lib/data";
-import { computeMarketStats } from "../../lib/marketStats";
-import { MOCK_MARKET } from "../../lib/data";
+import PropScoreLogo from "../../components/PropScoreLogo";
+import { searchByAddress } from "../../lib/data";
+import { useListings } from "../../lib/ListingsContext";
 
-const DEFAULT_FILTERS = { priceMin: 0, priceMax: 2_000_000, scoreMin: 0, scoreMax: 100, bedsMin: 0 };
+const DEFAULT_FILTERS: FilterValues = {
+  priceMin: 0, priceMax: 2_000_000,
+  scoreMin: 0, scoreMax: 100,
+  bedsMin: 0, bathsMin: 0,
+  showDistressedOnly: false,
+  showSavedOnly: false,
+  showEnrichedOnly: false,
+};
+
 const SALE_TYPE_OPTIONS = [
   { key: "foreclosure", label: "🏦 Foreclosure / REO" },
   { key: "shortSale",   label: "⏳ Short sale" },
@@ -21,26 +29,24 @@ const SALE_TYPE_OPTIONS = [
   { key: "cashOnly",    label: "💵 Cash only" },
 ];
 
-export default function HomeScreen() {
-  const [listings, setListings]       = useState<any[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [selected, setSelected]       = useState<any>(null);
-  const [sortBy, setSortBy]           = useState<"score" | "price" | "dom">("score");
-  const [sortDir, setSortDir]         = useState<"desc" | "asc">("desc");
-  const [gradeFilter, setGradeFilter] = useState<string | null>(null);
-  const [filters, setFilters]         = useState(DEFAULT_FILTERS);
-  const [showFilters, setShowFilters] = useState(false);
-  const [saleTypeFilter, setSaleTypeFilter] = useState<string | null>(null);
-  const [savedHomes, setSavedHomes]   = useState<Set<string>>(new Set());
-  const [listLimit, setListLimit]     = useState(50);
+const GRADE_BTNS = [
+  { key: "high",   label: "High",   color: "#dc2626", bg: "#fef2f2", border: "#fca5a5" },
+  { key: "medium", label: "Med",    color: "#d97706", bg: "#fffbeb", border: "#fcd34d" },
+  { key: "low",    label: "Low",    color: "#16a34a", bg: "#f0fdf4", border: "#86efac" },
+];
 
-  useEffect(() => {
-    fetchListings()
-      .then(data => setListings(data))
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
+export default function HomeScreen() {
+  const { listings, loading, savedHomes, toggleSaved, marketStats } = useListings();
+
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [selected, setSelected]           = useState<any>(null);
+  const [sortBy, setSortBy]               = useState<"score" | "price" | "dom">("score");
+  const [sortDir, setSortDir]             = useState<"desc" | "asc">("desc");
+  const [gradeFilter, setGradeFilter]     = useState<string | null>(null);
+  const [filters, setFilters]             = useState<FilterValues>(DEFAULT_FILTERS);
+  const [showFilters, setShowFilters]     = useState(false);
+  const [saleTypeFilter, setSaleTypeFilter] = useState<string | null>(null);
+  const [listLimit, setListLimit]         = useState(50);
 
   const handleSearch = useCallback(async (address: string) => {
     setSearchLoading(true);
@@ -55,25 +61,28 @@ export default function HomeScreen() {
     }
   }, []);
 
-  const toggleSaved = useCallback((id: string) => {
-    setSavedHomes(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }, []);
+  const toggleSort = (col: "score" | "price" | "dom") => {
+    if (sortBy === col) setSortDir(d => d === "desc" ? "asc" : "desc");
+    else { setSortBy(col); setSortDir("desc"); }
+  };
 
   const filtersActive =
     filters.priceMin > 0 || filters.priceMax < 2_000_000 ||
     filters.scoreMin > 0 || filters.scoreMax < 100 ||
-    filters.bedsMin > 0 || !!saleTypeFilter;
+    filters.bedsMin > 0 || filters.bathsMin > 0 ||
+    filters.showDistressedOnly || filters.showSavedOnly || filters.showEnrichedOnly ||
+    !!saleTypeFilter;
 
   const sorted = [...listings]
     .filter(p => {
       if (gradeFilter && p.grade !== gradeFilter) return false;
+      if (filters.showDistressedOnly && p.grade === "low") return false;
       if (p.price < filters.priceMin || p.price > filters.priceMax) return false;
       if (p.score < filters.scoreMin || p.score > filters.scoreMax) return false;
       if (filters.bedsMin > 0 && p.bedrooms < filters.bedsMin) return false;
+      if (filters.bathsMin > 0 && p.bathrooms < filters.bathsMin) return false;
+      if (filters.showSavedOnly && !savedHomes.has(String(p.id))) return false;
+      if (filters.showEnrichedOnly && !p.enriched) return false;
       if (saleTypeFilter && !p.financingFlags?.some((f: any) => f.key === saleTypeFilter)) return false;
       return true;
     })
@@ -84,18 +93,7 @@ export default function HomeScreen() {
       return mult * (a.dom - b.dom);
     });
 
-  const marketStats = computeMarketStats(listings, MOCK_MARKET.monthsSupply);
-
-  const GRADE_BTNS = [
-    { key: "high",   label: "High",   color: "#dc2626", bg: "#fef2f2", border: "#fca5a5" },
-    { key: "medium", label: "Med",    color: "#d97706", bg: "#fffbeb", border: "#fcd34d" },
-    { key: "low",    label: "Low",    color: "#16a34a", bg: "#f0fdf4", border: "#86efac" },
-  ];
-
-  const toggleSort = (col: "score" | "price" | "dom") => {
-    if (sortBy === col) setSortDir(d => d === "desc" ? "asc" : "desc");
-    else { setSortBy(col); setSortDir("desc"); }
-  };
+  const anyActive = filtersActive || !!gradeFilter;
 
   const clearAll = () => {
     setGradeFilter(null);
@@ -105,15 +103,13 @@ export default function HomeScreen() {
     setSortDir("desc");
   };
 
-  const anyActive = filtersActive || !!gradeFilter;
-
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" />
 
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.logo}><Text style={{ fontWeight: "400" }}>Prop</Text><Text style={{ fontWeight: "800" }}>Score</Text></Text>
+        <PropScoreLogo />
         {!loading && <Text style={styles.count}>{sorted.length.toLocaleString()} listings</Text>}
       </View>
 
@@ -162,6 +158,17 @@ export default function HomeScreen() {
         )}
       </View>
 
+      {/* Distress color key legend */}
+      <View style={styles.legendRow}>
+        {GRADE_BTNS.map(g => (
+          <View key={g.key} style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: g.color }]} />
+            <Text style={styles.legendText}>{g.label}</Text>
+          </View>
+        ))}
+        <Text style={styles.legendHint}>Distress signals</Text>
+      </View>
+
       {/* Market stats */}
       {!loading && <MarketStatsBar stats={marketStats} />}
 
@@ -207,7 +214,12 @@ export default function HomeScreen() {
 
       {/* Detail modal */}
       <Modal visible={!!selected} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelected(null)}>
-        <DetailSheet property={selected} onClose={() => setSelected(null)} />
+        <DetailSheet
+          property={selected}
+          onClose={() => setSelected(null)}
+          saved={selected ? savedHomes.has(String(selected.id)) : false}
+          onToggleSaved={() => selected && toggleSaved(String(selected.id))}
+        />
       </Modal>
 
       {/* Filter panel */}
@@ -227,7 +239,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f9fafb" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
-  logo: { fontSize: 22, color: "#111" },
   count: { fontSize: 13, color: "#6b7280" },
   pillRow: { flexDirection: "row", paddingHorizontal: 12, paddingBottom: 6, gap: 6, flexWrap: "wrap" },
   pill: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: "#fff" },
@@ -235,13 +246,18 @@ const styles = StyleSheet.create({
   pillText: { fontSize: 12, color: "#374151", fontWeight: "500" },
   pillTextActive: { color: "#fff", fontWeight: "600" },
   gradeDot: { width: 6, height: 6, borderRadius: 3 },
-  sortRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, paddingBottom: 8 },
+  sortRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, paddingBottom: 6 },
   sortBtns: { flexDirection: "row", backgroundColor: "#f3f4f6", borderRadius: 8, padding: 2 },
   sortBtn: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
   sortBtnActive: { backgroundColor: "#fff", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 2, elevation: 1 },
   sortBtnText: { fontSize: 12, color: "#6b7280" },
   sortBtnTextActive: { color: "#111", fontWeight: "600" },
   clearText: { fontSize: 12, color: "#dc2626", fontWeight: "500" },
+  legendRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingBottom: 6, gap: 10 },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+  legendDot: { width: 7, height: 7, borderRadius: 3.5 },
+  legendText: { fontSize: 11, color: "#6b7280" },
+  legendHint: { flex: 1, textAlign: "right", fontSize: 10, color: "#9ca3af" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingTop: 60 },
   loadingText: { fontSize: 14, color: "#6b7280" },
   emptyText: { fontSize: 15, color: "#374151" },

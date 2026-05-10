@@ -22,10 +22,13 @@ interface Props {
 
 export default function PropertyCard({ property, onPress, saved = false, onToggleSaved }: Props) {
   const g = GRADE_COLORS[property.grade as keyof typeof GRADE_COLORS] || GRADE_COLORS.low;
-  const cutPct = property.priceHistory?.length > 1
-    ? Math.round((property.priceHistory[0].price - property.price) / property.priceHistory[0].price * 100)
+
+  const ph = property.priceHistory || [];
+  const origPrice = ph.length > 1 ? Math.max(...ph.map((h: any) => h.price)) : 0;
+  const cutPct = origPrice > property.price
+    ? Math.round((origPrice - property.price) / origPrice * 100)
     : 0;
-  const cuts = (property.priceHistory?.length || 1) - 1;
+  const cuts = (ph.length || 1) - 1;
 
   const domStyle = property.dom < 30
     ? { backgroundColor: "#f0fdf4", color: "#15803d" }
@@ -67,7 +70,10 @@ export default function PropertyCard({ property, onPress, saved = false, onToggl
         <View style={styles.metaRow}>
           {property.bedrooms > 0 && (
             <View style={styles.metaPill}>
-              <Text style={styles.metaText}>{property.bedrooms}bd · {property.bathrooms}ba</Text>
+              <Text style={styles.metaText}>
+                {property.bedrooms}bd · {property.bathrooms}ba
+                {property.sqft ? ` · ${property.sqft >= 1000 ? `${(property.sqft / 1000).toFixed(1)}k` : property.sqft} sqft` : ""}
+              </Text>
             </View>
           )}
           {property.dom > 0 && (
@@ -81,6 +87,17 @@ export default function PropertyCard({ property, onPress, saved = false, onToggl
             </View>
           )}
         </View>
+
+        {/* Opportunity type badge */}
+        {property.opportunityType && (
+          <View style={styles.oppRow}>
+            <View style={[styles.oppBadge, { backgroundColor: property.opportunityType.bg, borderColor: property.opportunityType.border }]}>
+              <Text style={[styles.oppText, { color: property.opportunityType.color }]}>
+                {property.opportunityType.icon} {property.opportunityType.label}
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Financing flags */}
         {property.financingFlags?.length > 0 && (
@@ -99,7 +116,7 @@ export default function PropertyCard({ property, onPress, saved = false, onToggl
 
 const styles = StyleSheet.create({
   card: { flexDirection: "row", backgroundColor: "#fff", borderRadius: 12, marginHorizontal: 12, marginBottom: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2, overflow: "hidden" },
-  photo: { width: 100, height: 120 },
+  photo: { width: 100, height: 130 },
   photoPlaceholder: { backgroundColor: "#f3f4f6", alignItems: "center", justifyContent: "center" },
   photoPlaceholderText: { fontSize: 28 },
   body: { flex: 1, padding: 10 },
@@ -111,10 +128,13 @@ const styles = StyleSheet.create({
   scoreText: { fontSize: 13, fontWeight: "700" },
   heart: { fontSize: 16 },
   address: { fontSize: 13, color: "#374151" },
-  cityState: { fontSize: 12, color: "#6b7280", marginBottom: 6 },
+  cityState: { fontSize: 12, color: "#6b7280", marginBottom: 5 },
   metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginBottom: 4 },
   metaPill: { backgroundColor: "#f3f4f6", borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
   metaText: { fontSize: 11, color: "#6b7280" },
+  oppRow: { marginBottom: 4 },
+  oppBadge: { borderRadius: 5, borderWidth: 1, paddingHorizontal: 6, paddingVertical: 2, alignSelf: "flex-start" },
+  oppText: { fontSize: 11, fontWeight: "600" },
   flags: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
   flag: { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
   flagText: { fontSize: 10, fontWeight: "600" },

@@ -1,8 +1,10 @@
 import { Tabs } from "expo-router";
 import { Text } from "react-native";
+import { ListingsProvider } from "../../lib/ListingsContext";
 
 export default function TabLayout() {
   return (
+    <ListingsProvider>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -27,5 +29,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </ListingsProvider>
   );
 }
