@@ -201,7 +201,7 @@ export default function MapScreen() {
         <View style={styles.filterRow}>
           <View style={styles.countPill}>
             <Text style={styles.countText}>
-              {isCapped ? `Top ${MAX_PINS} of ${filtered.length.toLocaleString()}` : `${filtered.length.toLocaleString()} listings`}
+              {isCapped ? `Top ${MAX_VIEWPORT_PINS} of ${filtered.length.toLocaleString()}` : `${filtered.length.toLocaleString()} listings`}
             </Text>
           </View>
           <View style={styles.gradeFilters}>
