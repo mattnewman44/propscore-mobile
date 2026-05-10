@@ -32,8 +32,8 @@ const GRADE_BTNS = [
   { key: "low",    color: "#16a34a", bg: "#f0fdf4", border: "#86efac", label: "Low" },
 ];
 
-// Max pins to render at once — keeps touches responsive
-const MAX_PINS = 400;
+// Max pins to render within viewport — keeps touches responsive
+const MAX_VIEWPORT_PINS = 300;
 
 function fmtPrice(n: number) {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
@@ -52,6 +52,10 @@ export default function MapScreen() {
   const [query, setQuery]               = useState("");
   const [suggestions, setSuggestions]   = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [region, setRegion] = useState({
+    latMin: 26.40, latMax: 26.73,
+    lngMin: -82.10, lngMax: -81.77,
+  });
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hasActiveFilters =
@@ -60,8 +64,12 @@ export default function MapScreen() {
     filters.bedsMin > 0  || filters.bathsMin > 0 ||
     filters.showDistressedOnly || filters.showSavedOnly || filters.showEnrichedOnly;
 
-  // Apply all filters
+  // Apply filters + viewport bounding box
   const filtered = listings.filter(p => {
+    if (!p.lat || !p.lng) return false;
+    // Viewport filter — only render pins in the visible map area
+    if (p.lat < region.latMin || p.lat > region.latMax) return false;
+    if (p.lng < region.lngMin || p.lng > region.lngMax) return false;
     if (gradeFilter && p.grade !== gradeFilter) return false;
     if (p.price < filters.priceMin || p.price > filters.priceMax) return false;
     if (p.score < filters.scoreMin || p.score > filters.scoreMax) return false;
@@ -73,13 +81,13 @@ export default function MapScreen() {
     return true;
   });
 
-  // Cap at MAX_PINS sorted by score descending so highest-score pins always show
+  // Within viewport, show top pins by score (safety cap for dense areas)
   const visible = filtered
     .slice()
     .sort((a, b) => b.score - a.score)
-    .slice(0, MAX_PINS);
+    .slice(0, MAX_VIEWPORT_PINS);
 
-  const isCapped = filtered.length > MAX_PINS;
+  const isCapped = filtered.length > MAX_VIEWPORT_PINS;
 
   // Mapbox autocomplete
   const fetchSuggestions = useCallback((text: string) => {
@@ -132,6 +140,14 @@ export default function MapScreen() {
           }}
           showsUserLocation
           showsCompass={false}
+          onRegionChangeComplete={r => {
+            setRegion({
+              latMin: r.latitude  - r.latitudeDelta  * 0.6,
+              latMax: r.latitude  + r.latitudeDelta  * 0.6,
+              lngMin: r.longitude - r.longitudeDelta * 0.6,
+              lngMax: r.longitude + r.longitudeDelta * 0.6,
+            });
+          }}
         >
           {visible.map(p => (
             <Marker
