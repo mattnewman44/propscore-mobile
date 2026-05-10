@@ -177,6 +177,30 @@ export default function DetailSheet({ property, onClose, saved = false, onToggle
           </View>
         )}
 
+        {/* Off-market agent contact */}
+        {property._offMarket && (property.agentName || property.brokerage) && (
+          <View style={styles.agentBox}>
+            <Text style={styles.agentHeading}>📋 Last Listed By</Text>
+            {property.agentName && (
+              <Text style={styles.agentName}>{property.agentName}</Text>
+            )}
+            {property.brokerage && property.brokerage !== property.agentName && (
+              <Text style={styles.agentBrokerage}>{property.brokerage}</Text>
+            )}
+            {property.agentPhone && (
+              <TouchableOpacity
+                style={styles.agentCallBtn}
+                onPress={() => Linking.openURL(`tel:${property.agentPhone.replace(/\D/g, "")}`)}
+              >
+                <Text style={styles.agentCallText}>📞 {property.agentPhone}</Text>
+              </TouchableOpacity>
+            )}
+            <Text style={styles.agentHint}>
+              This property is off-market. The last listing agent may have owner contact info.
+            </Text>
+          </View>
+        )}
+
         {/* Flood zone */}
         {property.floodZone && (
           <View style={styles.floodBox}>
@@ -267,6 +291,13 @@ const styles = StyleSheet.create({
   oppSub: { fontSize: 12, color: "#6b7280" },
   floodBox: { marginHorizontal: 12, marginBottom: 8, borderRadius: 10, borderWidth: 1, borderColor: "#bfdbfe", backgroundColor: "#eff6ff", padding: 10 },
   floodText: { fontSize: 13, fontWeight: "600", color: "#1d4ed8" },
+  agentBox: { marginHorizontal: 12, marginBottom: 8, borderRadius: 10, borderWidth: 1, borderColor: "#e5e7eb", backgroundColor: "#f9fafb", padding: 12 },
+  agentHeading: { fontSize: 11, fontWeight: "700", color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 },
+  agentName: { fontSize: 15, fontWeight: "700", color: "#111", marginBottom: 2 },
+  agentBrokerage: { fontSize: 13, color: "#6b7280", marginBottom: 8 },
+  agentCallBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderWidth: 1, borderColor: "#d1d5db", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, alignSelf: "flex-start", marginBottom: 8 },
+  agentCallText: { fontSize: 14, fontWeight: "600", color: "#2563eb" },
+  agentHint: { fontSize: 11, color: "#9ca3af", lineHeight: 16 },
   section: { marginHorizontal: 12, marginTop: 12, marginBottom: 4 },
   sectionTitle: { fontSize: 12, fontWeight: "700", color: "#6b7280", marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 },
   divider: { height: 0.5, backgroundColor: "#e5e7eb", marginVertical: 16 },
