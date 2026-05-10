@@ -8,6 +8,7 @@ import MapView, { Marker } from "react-native-maps";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DetailSheet from "../../components/DetailSheet";
 import FilterPanel, { FilterValues } from "../../components/FilterPanel";
+import WeightsModal from "../../components/WeightsModal";
 import { useListings } from "../../lib/ListingsContext";
 import { searchByAddress } from "../../lib/data";
 
@@ -42,11 +43,12 @@ function fmtPrice(n: number) {
 }
 
 export default function MapScreen() {
-  const { listings, loading, savedHomes, toggleSaved } = useListings();
+  const { listings, loading, savedHomes, toggleSaved, hasCustomWeights } = useListings();
 
   const [gradeFilter, setGradeFilter]   = useState<string | null>(null);
   const [filters, setFilters]           = useState<FilterValues>(DEFAULT_FILTERS);
   const [showFilters, setShowFilters]   = useState(false);
+  const [showWeights, setShowWeights]   = useState(false);
   const [sheet, setSheet]               = useState<any>(null);
   const [detail, setDetail]             = useState<any>(null);
   const [query, setQuery]               = useState("");
@@ -225,6 +227,14 @@ export default function MapScreen() {
               {hasActiveFilters ? "⚙ Filters •" : "⚙ Filters"}
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterBtn, hasCustomWeights && { backgroundColor: "#f0f9ff", borderColor: "#bae6fd" }]}
+            onPress={() => setShowWeights(true)}
+          >
+            <Text style={[styles.filterBtnText, hasCustomWeights && { color: "#0369a1", fontWeight: "600" }]}>
+              {hasCustomWeights ? "⚖ •" : "⚖"}
+            </Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
 
@@ -326,6 +336,9 @@ export default function MapScreen() {
         values={filters}
         onApply={v => setFilters(v)}
       />
+
+      {/* Weights modal */}
+      <WeightsModal visible={showWeights} onClose={() => setShowWeights(false)} />
     </View>
   );
 }

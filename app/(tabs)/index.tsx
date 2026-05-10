@@ -11,6 +11,7 @@ import MarketStatsBar from "../../components/MarketStatsBar";
 import PropScoreLogo from "../../components/PropScoreLogo";
 import SaveSearchModal from "../../components/SaveSearchModal";
 import SavedSearchesModal from "../../components/SavedSearchesModal";
+import WeightsModal from "../../components/WeightsModal";
 import { searchByAddress, enrichByAddress } from "../../lib/data";
 import { useListings } from "../../lib/ListingsContext";
 import {
@@ -43,7 +44,7 @@ const GRADE_BTNS = [
 ];
 
 export default function HomeScreen() {
-  const { listings, loading, fetchError, savedHomes, toggleSaved, updateListing, marketStats } = useListings();
+  const { listings, loading, fetchError, savedHomes, toggleSaved, updateListing, marketStats, hasCustomWeights } = useListings();
 
   const [searchLoading, setSearchLoading]   = useState(false);
   const [selected, setSelected]             = useState<any>(null);
@@ -52,6 +53,7 @@ export default function HomeScreen() {
   const [gradeFilter, setGradeFilter]       = useState<string | null>(null);
   const [filters, setFilters]               = useState<FilterValues>(DEFAULT_FILTERS);
   const [showFilters, setShowFilters]       = useState(false);
+  const [showWeights, setShowWeights]       = useState(false);
   const [saleTypeFilter, setSaleTypeFilter] = useState<string | null>(null);
   const [listLimit, setListLimit]           = useState(50);
 
@@ -231,6 +233,15 @@ export default function HomeScreen() {
           </Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={[styles.pill, hasCustomWeights && { backgroundColor: "#f0f9ff", borderColor: "#bae6fd" }]}
+          onPress={() => setShowWeights(true)}
+        >
+          <Text style={[styles.pillText, hasCustomWeights && { color: "#0369a1", fontWeight: "600" }]}>
+            ⚖ Weights{hasCustomWeights ? " ●" : ""}
+          </Text>
+        </TouchableOpacity>
+
         {GRADE_BTNS.map(g => (
           <TouchableOpacity
             key={g.key}
@@ -376,6 +387,9 @@ export default function HomeScreen() {
         onEdit={handleEditSearch}
         activeId={activeSearchId}
       />
+
+      {/* Weights modal */}
+      <WeightsModal visible={showWeights} onClose={() => setShowWeights(false)} />
     </SafeAreaView>
   );
 }

@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import React from "react";
 import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, Linking } from "react-native";
-import { useListings } from "../lib/ListingsContext";
+import { useListings, SIGNAL_KEYS, SIGNAL_MAXES, type SignalKey } from "../lib/ListingsContext";
 
 const GRADE = {
   high:   { label: "High Distress",   dot: "#dc2626", bg: "#fef2f2", border: "#fca5a5", text: "#991b1b" },
@@ -157,29 +157,25 @@ interface Props {
 }
 
 const SIGNAL_CONFIG = [
-  { key: "dom",             label: "Days on market",    max: 25 },
-  { key: "priceReductions", label: "Price reductions",  max: 20 },
-  { key: "priceVsComps",    label: "Price vs comps",    max: 20 },
-  { key: "inventory",       label: "Inventory",         max: 15 },
-  { key: "sellerMotivation",label: "Seller motivation", max: 15 },
+  { key: "dom" as SignalKey,             label: "Days on market",    max: 25 },
+  { key: "priceReductions" as SignalKey, label: "Price reductions",  max: 20 },
+  { key: "priceVsComps" as SignalKey,    label: "Price vs comps",    max: 20 },
+  { key: "inventory" as SignalKey,       label: "Inventory",         max: 15 },
+  { key: "sellerMotivation" as SignalKey,label: "Seller motivation", max: 15 },
 ];
 
-const DEFAULT_WEIGHTS = { dom: 1, priceReductions: 1, priceVsComps: 1, inventory: 1, sellerMotivation: 1 };
-
 export default function DetailSheet({ property, onClose, saved = false, onToggleSaved }: Props) {
-  const { marketStats, avgCutPct, avgDOM } = useListings();
-  const [userWeights, setUserWeights] = useState<Record<string, number>>(DEFAULT_WEIGHTS);
+  const { marketStats, avgCutPct, avgDOM, weights, setWeights, hasCustomWeights } = useListings();
 
   if (!property) return null;
 
-  const setWeight = (key: string, w: number) => setUserWeights(prev => ({ ...prev, [key]: w }));
+  const setWeight = (key: SignalKey, w: number) => setWeights(prev => ({ ...prev, [key]: w }));
 
-  // Compute user score from base signals + user weights
+  // Compute user score from base signals + global weights
   const baseSignals = property.signals || {};
-  const userRaw = SIGNAL_CONFIG.reduce((sum, s) => sum + (baseSignals[s.key] || 0) * userWeights[s.key], 0);
-  const userMaxPossible = SIGNAL_CONFIG.reduce((sum, s) => sum + s.max * userWeights[s.key], 0);
+  const userRaw = SIGNAL_CONFIG.reduce((sum, s) => sum + (baseSignals[s.key] || 0) * weights[s.key], 0);
+  const userMaxPossible = SIGNAL_CONFIG.reduce((sum, s) => sum + s.max * weights[s.key], 0);
   const userScore = userMaxPossible > 0 ? Math.round((userRaw / userMaxPossible) * 100) : property.score;
-  const hasCustomWeights = Object.entries(userWeights).some(([k, v]) => v !== (DEFAULT_WEIGHTS as any)[k]);
 
   const g = GRADE[property.grade as keyof typeof GRADE] || GRADE.low;
   const ph = property.priceHistory || [];
@@ -327,46 +323,17 @@ export default function DetailSheet({ property, onClose, saved = false, onToggle
               </View>
             )}
           </View>
-          <SignalBar
-            label="Days on market"
-            baseValue={property.signals?.dom || 0}
-            max={25}
-            color={g.dot}
-            weight={userWeights.dom}
-            onWeight={w => setWeight("dom", w)}
-          />
-          <SignalBar
-            label="Price reductions"
-            baseValue={property.signals?.priceReductions || 0}
-            max={20}
-            color={g.dot}
-            weight={userWeights.priceReductions}
-            onWeight={w => setWeight("priceReductions", w)}
-          />
-          <SignalBar
-            label="Price vs comps"
-            baseValue={property.signals?.priceVsComps || 0}
-            max={20}
-            color={g.dot}
-            weight={userWeights.priceVsComps}
-            onWeight={w => setWeight("priceVsComps", w)}
-          />
-          <SignalBar
-            label="Inventory"
-            baseValue={property.signals?.inventory || 0}
-            max={15}
-            color={g.dot}
-            weight={userWeights.inventory}
-            onWeight={w => setWeight("inventory", w)}
-          />
-          <SignalBar
-            label="Seller motivation"
-            baseValue={property.signals?.sellerMotivation || 0}
-            max={15}
-            color={g.dot}
-            weight={userWeights.sellerMotivation}
-            onWeight={w => setWeight("sellerMotivation", w)}
-          />
+          {SIGNAL_CONFIG.map(sig => (
+            <SignalBar
+              key={sig.key}
+              label={sig.label}
+              baseValue={baseSignals[sig.key] || 0}
+              max={sig.max}
+              color={g.dot}
+              weight={weights[sig.key]}
+              onWeight={w => setWeight(sig.key, w)}
+            />
+          ))}
 
           {/* Legend */}
           <View style={sb.legend}>
