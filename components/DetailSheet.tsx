@@ -171,11 +171,16 @@ export default function DetailSheet({ property, onClose, saved = false, onToggle
 
   const setWeight = (key: SignalKey, w: number) => setWeights(prev => ({ ...prev, [key]: w }));
 
-  // Compute user score from base signals + global weights
+  // PropScore = always DEFAULT weights (1×) — the baseline stored in the DB
+  // userScore  = signals × current global weights (what affects pin rankings)
   const baseSignals = property.signals || {};
-  const userRaw = SIGNAL_CONFIG.reduce((sum, s) => sum + (baseSignals[s.key] || 0) * weights[s.key], 0);
-  const userMaxPossible = SIGNAL_CONFIG.reduce((sum, s) => sum + s.max * weights[s.key], 0);
-  const userScore = userMaxPossible > 0 ? Math.round((userRaw / userMaxPossible) * 100) : property.score;
+  const propScoreRaw = SIGNAL_CONFIG.reduce((sum, s) => sum + (baseSignals[s.key] || 0), 0);
+  const propScoreMax = SIGNAL_CONFIG.reduce((sum, s) => sum + s.max, 0);
+  const propScore    = propScoreMax > 0 ? Math.round((propScoreRaw / propScoreMax) * 100) : property.score;
+
+  const userRaw      = SIGNAL_CONFIG.reduce((sum, s) => sum + (baseSignals[s.key] || 0) * weights[s.key], 0);
+  const userMaxPoss  = SIGNAL_CONFIG.reduce((sum, s) => sum + s.max * weights[s.key], 0);
+  const userScore    = userMaxPoss > 0 ? Math.round((userRaw / userMaxPoss) * 100) : propScore;
 
   const g = GRADE[property.grade as keyof typeof GRADE] || GRADE.low;
   const ph = property.priceHistory || [];
@@ -317,7 +322,7 @@ export default function DetailSheet({ property, onClose, saved = false, onToggle
             <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Signal breakdown</Text>
             {hasCustomWeights && (
               <View style={sb.scoreComparePill}>
-                <Text style={sb.scoreCompareBase}>PropScore: {property.score}</Text>
+                <Text style={sb.scoreCompareBase}>PropScore: {propScore}</Text>
                 <Text style={sb.scoreCompareSep}>→</Text>
                 <Text style={[sb.scoreCompareUser, { color: g.dot }]}>Your Score: {userScore}</Text>
               </View>
