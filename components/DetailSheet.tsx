@@ -165,7 +165,7 @@ const SIGNAL_CONFIG = [
 ];
 
 export default function DetailSheet({ property, onClose, saved = false, onToggleSaved }: Props) {
-  const { marketStats, avgCutPct, avgDOM, weights, setWeights, hasCustomWeights } = useListings();
+  const { marketStats, marketData, avgCutPct, avgDOM, weights, setWeights, hasCustomWeights } = useListings();
 
   if (!property) return null;
 
@@ -356,7 +356,7 @@ export default function DetailSheet({ property, onClose, saved = false, onToggle
         {/* Metro Market vs This Property */}
         {marketStats.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Metro Market</Text>
+            <Text style={styles.sectionTitle}>{marketData?.metroName ? `${marketData.metroName} Market` : marketData?.stateAbbr ? `${marketData.stateAbbr} Market` : "Local Market"}</Text>
             {marketStats.map((s: any) => <StatCompareBar key={s.abbr} {...s} />)}
             <View style={styles.divider} />
             <Text style={[styles.sectionTitle, { marginTop: 4 }]}>This Property</Text>

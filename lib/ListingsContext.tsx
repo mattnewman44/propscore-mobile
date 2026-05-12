@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { fetchListings, MOCK_MARKET } from "./data";
+import { fetchListings, MOCK_MARKET, API_BASE } from "./data";
 import { computeMarketStats } from "./marketStats";
 
 // ── Global signal weights ────────────────────────────────────────────────────
@@ -45,6 +45,7 @@ interface ListingsContextType {
   toggleSaved: (id: string) => void;
   updateListing: (id: string, fields: Partial<any>) => void;
   marketStats: any[];
+  marketData: any | null;    // raw market API response (includes metroName, stateAbbr)
   avgCutPct: number;
   avgDOM: number | null;
   // Global weights
@@ -63,6 +64,7 @@ const ListingsContext = createContext<ListingsContextType>({
   toggleSaved: () => {},
   updateListing: () => {},
   marketStats: [],
+  marketData: null,
   avgCutPct: 0,
   avgDOM: null,
   weights: DEFAULT_GLOBAL_WEIGHTS,
@@ -79,10 +81,22 @@ export function ListingsProvider({ children }: { children: React.ReactNode }) {
   const [fetchError, setFetchError]   = useState<string | null>(null);
   const [savedHomes, setSavedHomes]   = useState<Set<string>>(new Set());
   const [weights, setWeights]         = useState<Record<SignalKey, number>>(DEFAULT_GLOBAL_WEIGHTS);
+  const [marketData, setMarketData]   = useState<any | null>(null);
 
   useEffect(() => {
     fetchListings()
-      .then(data => { setRawListings(data); setFetchError(null); })
+      .then(data => {
+        setRawListings(data);
+        setFetchError(null);
+        // Fetch real market data using the ZIP of the first listing
+        const zip = data.find((l: any) => l.zip)?.zip;
+        if (zip) {
+          fetch(`${API_BASE}/api/market?zip=${zip}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(md => { if (md) setMarketData(md); })
+            .catch(() => {}); // silently fall back to MOCK_MARKET
+        }
+      })
       .catch(err => {
         console.error("fetchListings failed:", err);
         setFetchError(err?.message || "Network error — check connection");
@@ -115,7 +129,7 @@ export function ListingsProvider({ children }: { children: React.ReactNode }) {
     [rawListings, weights],
   );
 
-  const marketStats = computeMarketStats(listings, MOCK_MARKET.monthsSupply);
+  const marketStats = computeMarketStats(listings, marketData?.monthsSupply ?? MOCK_MARKET.monthsSupply);
 
   const allWithCuts = listings.filter(p => p.pricecuts > 0);
   const avgCutPct = allWithCuts.length
@@ -134,7 +148,7 @@ export function ListingsProvider({ children }: { children: React.ReactNode }) {
     <ListingsContext.Provider value={{
       listings, rawListings, loading, fetchError,
       savedHomes, toggleSaved, updateListing,
-      marketStats, avgCutPct, avgDOM,
+      marketStats, marketData, avgCutPct, avgDOM,
       weights, setWeights, resetWeights, hasCustomWeights,
     }}>
       {children}
