@@ -80,7 +80,7 @@ export async function fetchListings() {
   });
 }
 
-function mapApiDetail(detail: any, search: any, address: string) {
+function mapApiDetail(detail: any, search: any, address: string, autoCompPrice?: number | null) {
   const price = detail.list_price || search.list_price || 0;
   const loc   = detail.location?.address || {};
   const desc  = detail.description || {};
@@ -114,7 +114,8 @@ function mapApiDetail(detail: any, search: any, address: string) {
     _offMarket: isOffMarket,
     mlsStatus: isOffMarket ? "OFF_MARKET" : (detail.status || "FOR_SALE"),
     priceHistory,
-    avgCompPrice: detail.estimates?.current_values?.find((v: any) => v.isbest_homevalue)?.estimate || 0,
+    // Prefer the sold_comps-based median from /api/property-search; fall back to AVM.
+    avgCompPrice: autoCompPrice ?? detail.estimates?.current_values?.find((v: any) => v.isbest_homevalue)?.estimate ?? 0,
     listingRemarks: desc.text || "",
     floodZone: detail.local?.flood?.fema_zone?.[0] || null,
     avm_estimate: detail.estimates?.current_values?.find((v: any) => v.isbest_homevalue)?.estimate || null,
@@ -185,7 +186,7 @@ export async function searchByAddress(address: string) {
   const res  = await fetch(`${API_BASE}/api/property-search?address=${encodeURIComponent(address)}`);
   const json = await res.json();
   if (json.error || !json.detail) return null;
-  const raw = mapApiDetail(json.detail, json.search || {}, address);
+  const raw = mapApiDetail(json.detail, json.search || {}, address, json.avgCompPrice);
   const scored = scoreProperty(raw, MOCK_MARKET, [], DEFAULT_WEIGHTS);
   upsertListing(scored); // fire-and-forget
   return scored;
@@ -207,6 +208,7 @@ export async function enrichByAddress(prop: any): Promise<Partial<any> | null> {
       sqft:            d.description?.sqft                                                   ?? prop.sqft,
       listingRemarks:  d.description?.text                                                   ?? prop.listingRemarks,
       floodZone:       d.local?.flood?.fema_zone?.[0]                                        ?? prop.floodZone,
+      avgCompPrice:    json.avgCompPrice                                                     ?? prop.avgCompPrice,
       avm_estimate:    d.estimates?.current_values?.find((v: any) => v.isbest_homevalue)?.estimate ?? prop.avm_estimate,
       last_sold_price: d.last_sold_price                                                     ?? prop.last_sold_price,
       last_sold_date:  d.last_sold_date                                                      ?? prop.last_sold_date,
