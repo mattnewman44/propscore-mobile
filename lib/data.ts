@@ -33,7 +33,8 @@ function mapRow(row: any) {
     sqft: row.sqft || null,
     dom: row.dom || 0,
     priceHistory,
-    avgCompPrice: row.avm_estimate || row.price || 0,
+    // Prefer pre-computed median from sold_comps; fall back to AVM, then price.
+    avgCompPrice: row.avg_comp_price || row.avm_estimate || row.price || 0,
     vacant: false,
     probate: false,
     failedListing: row.is_price_reduced || false,
