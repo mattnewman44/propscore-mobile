@@ -73,6 +73,26 @@ function SplitCircleMarker({ score, grade }: { score: number; grade: string }) {
   );
 }
 
+// Split-circle marker for the searched/subject property: grade color (left 75%) + blue accent (right 25%)
+function SubjectMarker({ score, grade }: { score: number; grade: string }) {
+  const gradeColor = GRADE_COLORS[grade as keyof typeof GRADE_COLORS] || "#6b7280";
+  const SIZE = 34;
+  return (
+    <View style={{
+      width: SIZE, height: SIZE, borderRadius: SIZE / 2,
+      overflow: "hidden", flexDirection: "row",
+      borderWidth: 2, borderColor: "#fff",
+      shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.4, shadowRadius: 4, elevation: 5,
+    }}>
+      <View style={{ flex: 3, backgroundColor: gradeColor, alignItems: "center", justifyContent: "center" }}>
+        <Text style={{ color: "#fff", fontSize: 9, fontWeight: "700" }}>{score}</Text>
+      </View>
+      <View style={{ flex: 1, backgroundColor: "#2563eb" }} />
+    </View>
+  );
+}
+
 // Grey pill with sold price
 function SoldMarker({ price }: { price: number }) {
   return (
@@ -108,6 +128,7 @@ export default function MapScreen() {
   const [showWeights, setShowWeights]   = useState(false);
   const [sheet, setSheet]               = useState<any>(null);
   const [detail, setDetail]             = useState<any>(null);
+  const [subjectId, setSubjectId]       = useState<string | null>(null);
   const [query, setQuery]               = useState("");
   const [suggestions, setSuggestions]   = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -203,7 +224,10 @@ export default function MapScreen() {
     try {
       const [lng, lat] = feature.center || [];
       const result = await searchByAddress(feature.place_name, lat, lng);
-      if (result) setSheet(result);
+      if (result) {
+        setSheet(result);
+        setSubjectId(String(result.id));
+      }
     } catch {}
     finally { setSearchLoading(false); }
   }, []);
@@ -255,7 +279,7 @@ export default function MapScreen() {
             </Marker>
           ))}
 
-          {/* Active listing pins — dimmed in comp highlight mode */}
+          {/* Active listing pins — subject property gets split-circle marker */}
           {!compHighlight && visible.map(p => (
             <Marker
               key={String(p.id)}
@@ -263,7 +287,10 @@ export default function MapScreen() {
               tracksViewChanges={false}
               onPress={() => { closeAllSheets(); setSheet(p); setSuggestions([]); }}
             >
-              <SplitCircleMarker score={p.score} grade={p.grade} />
+              {subjectId && String(p.id) === subjectId
+                ? <SubjectMarker score={p.score} grade={p.grade} />
+                : <SplitCircleMarker score={p.score} grade={p.grade} />
+              }
             </Marker>
           ))}
 
@@ -301,7 +328,7 @@ export default function MapScreen() {
             <TextInput
               style={styles.searchInput}
               value={query}
-              onChangeText={t => { setQuery(t); fetchSuggestions(t); }}
+              onChangeText={t => { setQuery(t); fetchSuggestions(t); if (!t) setSubjectId(null); }}
               placeholder="Search address…"
               placeholderTextColor="#9ca3af"
               autoCorrect={false}
