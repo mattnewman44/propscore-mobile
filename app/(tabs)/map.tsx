@@ -47,22 +47,19 @@ function fmtDate(s: string) {
   return isNaN(d.getTime()) ? s : d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
 
-// Split-circle marker: grade color (left ~75%) + blue accent (right ~25%)
-// Must use equal width/height + borderRadius = size/2 to render as a true circle on iOS.
+// Single-color circle marker: solid grade color with score number
 function SplitCircleMarker({ score, grade }: { score: number; grade: string }) {
   const gradeColor = GRADE_COLORS[grade as keyof typeof GRADE_COLORS] || "#6b7280";
   const SIZE = 30;
   return (
     <View style={{
       width: SIZE, height: SIZE, borderRadius: SIZE / 2,
-      overflow: "hidden", flexDirection: "row",
+      backgroundColor: gradeColor,
+      alignItems: "center", justifyContent: "center",
       shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
       shadowOpacity: 0.3, shadowRadius: 2, elevation: 3,
     }}>
-      <View style={{ flex: 3, backgroundColor: gradeColor, alignItems: "center", justifyContent: "center" }}>
-        <Text style={{ color: "#fff", fontSize: 9, fontWeight: "700" }}>{score}</Text>
-      </View>
-      <View style={{ flex: 1, backgroundColor: "#2563eb" }} />
+      <Text style={{ color: "#fff", fontSize: 9, fontWeight: "700" }}>{score}</Text>
     </View>
   );
 }
