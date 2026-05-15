@@ -111,8 +111,8 @@ function StatCompareBar({ abbr, label, type, raw, display, barMax, note }: any) 
   );
 }
 
-function Accordion({ title, badge, children }: { title: string; badge?: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
+function Accordion({ title, badge, defaultOpen, children }: { title: string; badge?: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen ?? false);
   return (
     <View style={acc.container}>
       <TouchableOpacity style={acc.header} onPress={() => setOpen(o => !o)} activeOpacity={0.7}>
@@ -354,9 +354,10 @@ function EnrichedAccordion({ property }: { property: any }) {
   const flood = property.floodZone;
   const floodInfo = flood ? FLOOD_DETAIL[flood] || FLOOD_DETAIL[flood.replace(/\s*\(.*\)/, "").trim()] || FLOOD_DETAIL["X"] : null;
   const flags = property.financingFlags || [];
+  const hasContent = !!(flood || (flags && flags.length > 0) || property.listingRemarks);
 
   return (
-    <Accordion title="Deal Details">
+    <Accordion title="Deal Details" defaultOpen={hasContent}>
       {opp && (
         <View style={[styles.oppExpanded, { backgroundColor: opp.bg, borderColor: opp.border }]}>
           <View style={styles.oppExpandedHeader}>
@@ -684,12 +685,23 @@ export default function DetailSheet({ property, onClose, saved = false, onToggle
           </View>
         )}
 
-        {/* Flood zone (compact) */}
-        {prop.floodZone && (
-          <View style={styles.floodBox}>
-            <Text style={styles.floodText}>🌊 Flood Zone: {prop.floodZone}</Text>
-          </View>
-        )}
+        {/* Flood zone — always-visible with full description */}
+        {prop.floodZone && (() => {
+          const fz = prop.floodZone as string;
+          const fi = FLOOD_DETAIL[fz] || FLOOD_DETAIL[fz.replace(/\s*\(.*\)/, "").trim()] || FLOOD_DETAIL["X"];
+          return (
+            <View style={styles.floodBox}>
+              <Text style={styles.floodText}>🌊 Flood Zone {fz}</Text>
+              {fi && (
+                <>
+                  <Text style={styles.floodBoxRisk}>{fi.risk}</Text>
+                  <Text style={styles.floodBoxNote}>{fi.note}</Text>
+                  <Text style={styles.floodBoxIns}>Insurance: {fi.insurance}</Text>
+                </>
+              )}
+            </View>
+          );
+        })()}
 
         {/* Financing flags (compact) */}
         {prop.financingFlags?.length > 0 && (
@@ -847,8 +859,11 @@ const styles = StyleSheet.create({
   oppLabel: { fontSize: 14, fontWeight: "700" },
   oppSub: { fontSize: 12, color: "#6b7280" },
 
-  floodBox: { marginHorizontal: 12, marginBottom: 8, borderRadius: 10, borderWidth: 1, borderColor: "#bfdbfe", backgroundColor: "#eff6ff", padding: 10 },
-  floodText: { fontSize: 13, fontWeight: "600", color: "#1d4ed8" },
+  floodBox: { marginHorizontal: 12, marginBottom: 8, borderRadius: 10, borderWidth: 1, borderColor: "#bfdbfe", backgroundColor: "#eff6ff", padding: 12 },
+  floodText: { fontSize: 13, fontWeight: "700", color: "#1d4ed8", marginBottom: 4 },
+  floodBoxRisk: { fontSize: 13, color: "#1e40af", fontWeight: "600", marginBottom: 2 },
+  floodBoxNote: { fontSize: 12, color: "#374151", lineHeight: 18, marginBottom: 4 },
+  floodBoxIns: { fontSize: 12, color: "#6b7280" },
 
   agentBox: { marginHorizontal: 12, marginBottom: 8, borderRadius: 10, borderWidth: 1, borderColor: "#e5e7eb", backgroundColor: "#f9fafb", padding: 12 },
   agentHeading: { fontSize: 11, fontWeight: "700", color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 },
