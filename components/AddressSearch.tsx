@@ -23,6 +23,9 @@ export default function AddressSearch({ onSearch, loading }: Props) {
   const fetchSuggestions = (text: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (text.length < 3) { setSuggestions([]); return; }
+    // Don't fetch Mapbox suggestions for addresses with unit numbers — Mapbox strips
+    // units from place_name results and would resolve to the wrong unit (e.g. Apt 201 ≠ Apt 301).
+    if (/\b(?:apt|unit|#)\s*\w+/i.test(text)) { setSuggestions([]); setShowSuggestions(false); return; }
 
     debounceRef.current = setTimeout(async () => {
       try {
@@ -46,11 +49,15 @@ export default function AddressSearch({ onSearch, loading }: Props) {
   };
 
   const handleSelect = (address: string) => {
-    setQuery(address);
+    // If the user typed a unit number, ignore the Mapbox suggestion (which strips it)
+    // and search with the original typed query instead.
+    const hasUnit = /\b(?:apt|unit|#)\s*\w+/i.test(query);
+    const finalAddress = hasUnit ? query.trim() : address;
+    setQuery(finalAddress);
     setSuggestions([]);
     setShowSuggestions(false);
     Keyboard.dismiss();
-    onSearch(address);
+    onSearch(finalAddress);
   };
 
   const handleSubmit = () => {
