@@ -16,6 +16,7 @@ const DEFAULT_FILTERS: FilterValues = {
   priceMin: 0, priceMax: 2_000_000,
   scoreMin: 0, scoreMax: 100,
   bedsMin: 0, bathsMin: 0,
+  domMax: null,
   showDistressedOnly: false,
   showSavedOnly: false,
   showEnrichedOnly: false,
@@ -31,6 +32,14 @@ const GRADE_BTNS = [
   { key: "high",   color: "#dc2626", bg: "#fef2f2", border: "#fca5a5", label: "High" },
   { key: "medium", color: "#d97706", bg: "#fffbeb", border: "#fcd34d", label: "Med" },
   { key: "low",    color: "#16a34a", bg: "#f0fdf4", border: "#86efac", label: "Low" },
+];
+
+const SALE_TYPE_OPTIONS = [
+  { key: "foreclosure", label: "🏦 Foreclosure / REO" },
+  { key: "shortSale",   label: "⏳ Short sale" },
+  { key: "probate",     label: "⚖️ Probate / estate" },
+  { key: "asIs",        label: "🔧 As-is / fixer" },
+  { key: "cashOnly",    label: "💵 Cash only" },
 ];
 
 const MAX_VIEWPORT_PINS = 300;
@@ -93,6 +102,7 @@ export default function MapScreen() {
   const { listings, loading, savedHomes, toggleSaved, hasCustomWeights } = useListings();
 
   const [gradeFilter, setGradeFilter]   = useState<string | null>(null);
+  const [saleTypeFilter, setSaleTypeFilter] = useState<string | null>(null);
   const [filters, setFilters]           = useState<FilterValues>(DEFAULT_FILTERS);
   const [showFilters, setShowFilters]   = useState(false);
   const [showWeights, setShowWeights]   = useState(false);
@@ -143,6 +153,7 @@ export default function MapScreen() {
     filters.priceMin > 0 || filters.priceMax < 2_000_000 ||
     filters.scoreMin > 0 || filters.scoreMax < 100 ||
     filters.bedsMin > 0  || filters.bathsMin > 0 ||
+    filters.domMax !== null || !!saleTypeFilter ||
     filters.showDistressedOnly || filters.showSavedOnly || filters.showEnrichedOnly;
 
   const filtered = listings.filter(p => {
@@ -154,9 +165,11 @@ export default function MapScreen() {
     if (p.score < filters.scoreMin || p.score > filters.scoreMax) return false;
     if (filters.bedsMin  > 0 && (p.bedrooms  || 0) < filters.bedsMin)  return false;
     if (filters.bathsMin > 0 && (p.bathrooms || 0) < filters.bathsMin) return false;
+    if (filters.domMax !== null && (p.dom || 0) > filters.domMax) return false;
     if (filters.showDistressedOnly && p.grade === "low") return false;
     if (filters.showSavedOnly && !savedHomes.has(String(p.id))) return false;
     if (filters.showEnrichedOnly && !p.enriched) return false;
+    if (saleTypeFilter && !p.financingFlags?.some((f: any) => f.key === saleTypeFilter)) return false;
     return true;
   });
 
@@ -312,7 +325,8 @@ export default function MapScreen() {
           </View>
         )}
 
-        <View style={styles.filterRow}>
+        {/* Row 1: count pill + grade filters */}
+        <View style={styles.filterRow1}>
           <View style={styles.countPill}>
             <Text style={styles.countText}>
               {isCapped ? `Top ${MAX_VIEWPORT_PINS} of ${filtered.length.toLocaleString()}` : `${filtered.length.toLocaleString()} listings`}
@@ -330,6 +344,29 @@ export default function MapScreen() {
               </TouchableOpacity>
             ))}
           </View>
+        </View>
+
+        {/* Row 2: layer toggles (left) + filters/weights (right) */}
+        <View style={styles.filterRow2}>
+          <TouchableOpacity
+            style={[styles.layerBtn, showSold && styles.layerBtnActive]}
+            onPress={() => setShowSold(v => !v)}
+          >
+            {soldLoading
+              ? <ActivityIndicator size="small" color={showSold ? "#fff" : "#4b5563"} />
+              : <Text style={[styles.layerBtnText, showSold && styles.layerBtnTextActive]}>Sold</Text>
+            }
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.layerBtn, showOffMarket && styles.layerBtnActive]}
+            onPress={() => setShowOffMarket(v => !v)}
+          >
+            {offMarketLoading
+              ? <ActivityIndicator size="small" color={showOffMarket ? "#fff" : "#4b5563"} />
+              : <Text style={[styles.layerBtnText, showOffMarket && styles.layerBtnTextActive]}>Off-Mkt</Text>
+            }
+          </TouchableOpacity>
+          <View style={{ flex: 1 }} />
           <TouchableOpacity
             style={[styles.filterBtn, hasActiveFilters && styles.filterBtnActive]}
             onPress={() => setShowFilters(true)}
@@ -348,28 +385,6 @@ export default function MapScreen() {
           </TouchableOpacity>
         </View>
       </SafeAreaView>
-
-      {/* ── Layer toggles (left side) ── */}
-      <View style={styles.layerToggles} pointerEvents="box-none">
-        <TouchableOpacity
-          style={[styles.layerBtn, showSold && styles.layerBtnActive]}
-          onPress={() => setShowSold(v => !v)}
-        >
-          {soldLoading
-            ? <ActivityIndicator size="small" color={showSold ? "#fff" : "#4b5563"} />
-            : <Text style={[styles.layerBtnText, showSold && styles.layerBtnTextActive]}>Sold</Text>
-          }
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.layerBtn, showOffMarket && styles.layerBtnActive]}
-          onPress={() => setShowOffMarket(v => !v)}
-        >
-          {offMarketLoading
-            ? <ActivityIndicator size="small" color={showOffMarket ? "#fff" : "#4b5563"} />
-            : <Text style={[styles.layerBtnText, showOffMarket && styles.layerBtnTextActive]}>Off-Mkt</Text>
-          }
-        </TouchableOpacity>
-      </View>
 
       {/* ── Active listing peek sheet ── */}
       {sheet && (
@@ -566,6 +581,9 @@ export default function MapScreen() {
         onClose={() => setShowFilters(false)}
         values={filters}
         onApply={v => setFilters(v)}
+        saleTypeFilter={saleTypeFilter}
+        onSaleTypeFilter={setSaleTypeFilter}
+        saleTypeOptions={SALE_TYPE_OPTIONS}
       />
 
       <WeightsModal visible={showWeights} onClose={() => setShowWeights(false)} />
@@ -586,24 +604,25 @@ const styles = StyleSheet.create({
   dropdownItem: { padding: 12, borderBottomWidth: 0.5, borderColor: "#f0f0f0" },
   dropdownText: { fontSize: 13, color: "#374151" },
 
-  filterRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingBottom: 8, gap: 6, flexWrap: "nowrap" },
+  // Row 1: count pill + grade filters
+  filterRow1: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingBottom: 5, gap: 6 },
   countPill: { backgroundColor: "#111", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
   countText: { color: "#fff", fontSize: 11, fontWeight: "600" },
   gradeFilters: { flexDirection: "row", gap: 5, flex: 1 },
-  gradeBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 5, backgroundColor: "#fff" },
+  gradeBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 5, backgroundColor: "#fff", flex: 1, justifyContent: "center" },
   dot: { width: 6, height: 6, borderRadius: 3 },
   gradeBtnText: { fontSize: 11, color: "#374151", fontWeight: "500" },
+
+  // Row 2: layer toggles (left) + filters/weights (right)
+  filterRow2: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingBottom: 8, gap: 6 },
+  layerBtn: { backgroundColor: "#fff", borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 6, paddingHorizontal: 10, paddingVertical: 5, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2, minWidth: 52, alignItems: "center" },
+  layerBtnActive: { backgroundColor: "#4b5563", borderColor: "#4b5563" },
+  layerBtnText: { fontSize: 11, fontWeight: "600", color: "#374151" },
+  layerBtnTextActive: { color: "#fff" },
   filterBtn: { borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 6, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: "#fff" },
   filterBtnActive: { backgroundColor: "#111", borderColor: "#111" },
   filterBtnText: { fontSize: 11, color: "#374151", fontWeight: "600" },
   filterBtnTextActive: { color: "#fff" },
-
-  // Layer toggle buttons (left side, midway down)
-  layerToggles: { position: "absolute", left: 12, top: "45%", zIndex: 100, gap: 6 } as any,
-  layerBtn: { backgroundColor: "#fff", borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4, elevation: 3, minWidth: 64, alignItems: "center" },
-  layerBtnActive: { backgroundColor: "#4b5563", borderColor: "#4b5563" },
-  layerBtnText: { fontSize: 12, fontWeight: "600", color: "#374151" },
-  layerBtnTextActive: { color: "#fff" },
 
   sheetBackdrop: { position: "absolute", inset: 0, zIndex: 999 } as any,
   sheet: { position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 1000, backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, shadowColor: "#000", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.12, shadowRadius: 12, elevation: 8, paddingBottom: 32 },
