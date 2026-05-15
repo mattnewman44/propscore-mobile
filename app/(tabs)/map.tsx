@@ -1,5 +1,5 @@
 import "react-native-url-polyfill/auto";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, Modal, TouchableOpacity, TextInput,
   ScrollView, Image, Keyboard, ActivityIndicator,
@@ -10,7 +10,7 @@ import DetailSheet from "../../components/DetailSheet";
 import FilterPanel, { FilterValues } from "../../components/FilterPanel";
 import WeightsModal from "../../components/WeightsModal";
 import { useListings } from "../../lib/ListingsContext";
-import { searchByAddress } from "../../lib/data";
+import { searchByAddress, fetchSoldComps, fetchOffMarketListings } from "../../lib/data";
 
 const DEFAULT_FILTERS: FilterValues = {
   priceMin: 0, priceMax: 2_000_000,
@@ -33,13 +33,63 @@ const GRADE_BTNS = [
   { key: "low",    color: "#16a34a", bg: "#f0fdf4", border: "#86efac", label: "Low" },
 ];
 
-// Max pins to render within viewport — keeps touches responsive
 const MAX_VIEWPORT_PINS = 300;
 
 function fmtPrice(n: number) {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `$${Math.round(n / 1_000)}k`;
   return `$${n}`;
+}
+
+function fmtDate(s: string) {
+  if (!s) return "";
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? s : d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
+
+// Split-circle marker: grade color (left ~75%) + blue accent (right ~25%)
+// Must use equal width/height + borderRadius = size/2 to render as a true circle on iOS.
+function SplitCircleMarker({ score, grade }: { score: number; grade: string }) {
+  const gradeColor = GRADE_COLORS[grade as keyof typeof GRADE_COLORS] || "#6b7280";
+  const SIZE = 30;
+  return (
+    <View style={{
+      width: SIZE, height: SIZE, borderRadius: SIZE / 2,
+      overflow: "hidden", flexDirection: "row",
+      shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.3, shadowRadius: 2, elevation: 3,
+    }}>
+      <View style={{ flex: 3, backgroundColor: gradeColor, alignItems: "center", justifyContent: "center" }}>
+        <Text style={{ color: "#fff", fontSize: 9, fontWeight: "700" }}>{score}</Text>
+      </View>
+      <View style={{ flex: 1, backgroundColor: "#2563eb" }} />
+    </View>
+  );
+}
+
+// Grey pill with sold price
+function SoldMarker({ price }: { price: number }) {
+  return (
+    <View style={{
+      backgroundColor: "#4b5563", borderRadius: 8,
+      paddingHorizontal: 5, paddingVertical: 2,
+      shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.2, shadowRadius: 2, elevation: 2,
+    }}>
+      <Text style={{ color: "#fff", fontSize: 10, fontWeight: "600" }}>{fmtPrice(price)}</Text>
+    </View>
+  );
+}
+
+// Hollow grey circle for off-market
+function OffMarketMarker() {
+  return (
+    <View style={{
+      width: 18, height: 18, borderRadius: 9,
+      borderWidth: 2, borderColor: "#9ca3af",
+      backgroundColor: "rgba(255,255,255,0.75)",
+    }} />
+  );
 }
 
 export default function MapScreen() {
@@ -54,12 +104,43 @@ export default function MapScreen() {
   const [query, setQuery]               = useState("");
   const [suggestions, setSuggestions]   = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
-  // Matches MapView initialRegion exactly (lat 26.5629 ± 0.09, lng -81.9495 ± 0.09)
+
+  // Sold + off-market layers
+  const [showSold, setShowSold]               = useState(false);
+  const [showOffMarket, setShowOffMarket]     = useState(false);
+  const [soldComps, setSoldComps]             = useState<any[]>([]);
+  const [offMarketListings, setOffMarket]     = useState<any[]>([]);
+  const [soldLoading, setSoldLoading]         = useState(false);
+  const [offMarketLoading, setOffMarketLoading] = useState(false);
+  const [soldSheet, setSoldSheet]             = useState<any>(null);
+  const [offSheet, setOffSheet]               = useState<any>(null);
+  const [compHighlight, setCompHighlight]     = useState<any[] | null>(null);
+
   const [region, setRegion] = useState({
     latMin: 26.4729, latMax: 26.6529,
     lngMin: -82.0395, lngMax: -81.8595,
   });
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fetch sold comps when layer toggled on or region changes
+  useEffect(() => {
+    if (!showSold) { setSoldComps([]); return; }
+    setSoldLoading(true);
+    fetchSoldComps(region)
+      .then(setSoldComps)
+      .catch(() => {})
+      .finally(() => setSoldLoading(false));
+  }, [showSold, region]);
+
+  // Fetch off-market when layer toggled on or region changes
+  useEffect(() => {
+    if (!showOffMarket) { setOffMarket([]); return; }
+    setOffMarketLoading(true);
+    fetchOffMarketListings(region)
+      .then(setOffMarket)
+      .catch(() => {})
+      .finally(() => setOffMarketLoading(false));
+  }, [showOffMarket, region]);
 
   const hasActiveFilters =
     filters.priceMin > 0 || filters.priceMax < 2_000_000 ||
@@ -67,10 +148,8 @@ export default function MapScreen() {
     filters.bedsMin > 0  || filters.bathsMin > 0 ||
     filters.showDistressedOnly || filters.showSavedOnly || filters.showEnrichedOnly;
 
-  // Apply filters + viewport bounding box
   const filtered = listings.filter(p => {
     if (!p.lat || !p.lng) return false;
-    // Viewport filter — only render pins in the visible map area
     if (p.lat < region.latMin || p.lat > region.latMax) return false;
     if (p.lng < region.lngMin || p.lng > region.lngMax) return false;
     if (gradeFilter && p.grade !== gradeFilter) return false;
@@ -84,7 +163,6 @@ export default function MapScreen() {
     return true;
   });
 
-  // Within viewport, show top pins by score (safety cap for dense areas)
   const visible = filtered
     .slice()
     .sort((a, b) => b.score - a.score)
@@ -92,7 +170,6 @@ export default function MapScreen() {
 
   const isCapped = filtered.length > MAX_VIEWPORT_PINS;
 
-  // Mapbox autocomplete
   const fetchSuggestions = useCallback((text: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (text.length < 3) { setSuggestions([]); return; }
@@ -114,7 +191,8 @@ export default function MapScreen() {
     Keyboard.dismiss();
     setSearchLoading(true);
     try {
-      const result = await searchByAddress(feature.place_name);
+      const [lng, lat] = feature.center || [];
+      const result = await searchByAddress(feature.place_name, lat, lng);
       if (result) setSheet(result);
     } catch {}
     finally { setSearchLoading(false); }
@@ -124,6 +202,8 @@ export default function MapScreen() {
     dom < 30  ? { bg: "#f0fdf4", color: "#15803d" } :
     dom <= 60 ? { bg: "#fffbeb", color: "#92400e" } :
                 { bg: "#fef2f2", color: "#991b1b" };
+
+  const closeAllSheets = () => { setSheet(null); setSoldSheet(null); setOffSheet(null); };
 
   return (
     <View style={{ flex: 1 }}>
@@ -152,16 +232,53 @@ export default function MapScreen() {
             });
           }}
         >
-          {visible.map(p => (
+          {/* Comp highlight pins (shown when user taps "View on Map" from comps accordion) */}
+          {compHighlight && compHighlight.map((c, i) => (
+            <Marker
+              key={`ch-${i}`}
+              coordinate={{ latitude: c.lat, longitude: c.lng }}
+              tracksViewChanges={false}
+            >
+              <View style={{ backgroundColor: "#2563eb", borderRadius: 10, paddingHorizontal: 6, paddingVertical: 3, borderWidth: 2, borderColor: "#fff" }}>
+                <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>{fmtPrice(c.sold_price)}</Text>
+              </View>
+            </Marker>
+          ))}
+
+          {/* Active listing pins — dimmed in comp highlight mode */}
+          {!compHighlight && visible.map(p => (
             <Marker
               key={String(p.id)}
               coordinate={{ latitude: p.lat, longitude: p.lng }}
               tracksViewChanges={false}
-              onPress={() => { setSheet(p); setSuggestions([]); }}
+              onPress={() => { closeAllSheets(); setSheet(p); setSuggestions([]); }}
             >
-              <View style={[styles.pin, { backgroundColor: GRADE_COLORS[p.grade as keyof typeof GRADE_COLORS] || "#6b7280" }]}>
-                <Text style={styles.pinText}>{p.score}</Text>
-              </View>
+              <SplitCircleMarker score={p.score} grade={p.grade} />
+            </Marker>
+          ))}
+
+          {/* Sold comp pins */}
+
+          {showSold && soldComps.map(c => (
+            <Marker
+              key={`sold-${c.id}`}
+              coordinate={{ latitude: c.lat, longitude: c.lng }}
+              tracksViewChanges={false}
+              onPress={() => { closeAllSheets(); setSoldSheet(c); }}
+            >
+              <SoldMarker price={c.sold_price} />
+            </Marker>
+          ))}
+
+          {/* Off-market pins */}
+          {showOffMarket && offMarketListings.map(p => (
+            <Marker
+              key={`off-${p.id}`}
+              coordinate={{ latitude: p.lat, longitude: p.lng }}
+              tracksViewChanges={false}
+              onPress={() => { closeAllSheets(); setOffSheet(p); }}
+            >
+              <OffMarketMarker />
             </Marker>
           ))}
         </MapView>
@@ -169,7 +286,6 @@ export default function MapScreen() {
 
       {/* ── Floating top bar ── */}
       <SafeAreaView style={styles.topOverlay} edges={["top"]} pointerEvents="box-none">
-        {/* Search row */}
         <View style={styles.searchRow}>
           <View style={styles.searchBox}>
             <TextInput
@@ -189,7 +305,6 @@ export default function MapScreen() {
           </View>
         </View>
 
-        {/* Autocomplete dropdown */}
         {suggestions.length > 0 && (
           <View style={styles.dropdown}>
             {suggestions.map(f => (
@@ -200,7 +315,6 @@ export default function MapScreen() {
           </View>
         )}
 
-        {/* Filter row: count + grade pills + Filters button */}
         <View style={styles.filterRow}>
           <View style={styles.countPill}>
             <Text style={styles.countText}>
@@ -238,7 +352,29 @@ export default function MapScreen() {
         </View>
       </SafeAreaView>
 
-      {/* ── Bottom peek sheet on pin tap ── */}
+      {/* ── Layer toggles (left side) ── */}
+      <View style={styles.layerToggles} pointerEvents="box-none">
+        <TouchableOpacity
+          style={[styles.layerBtn, showSold && styles.layerBtnActive]}
+          onPress={() => setShowSold(v => !v)}
+        >
+          {soldLoading
+            ? <ActivityIndicator size="small" color={showSold ? "#fff" : "#4b5563"} />
+            : <Text style={[styles.layerBtnText, showSold && styles.layerBtnTextActive]}>Sold</Text>
+          }
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.layerBtn, showOffMarket && styles.layerBtnActive]}
+          onPress={() => setShowOffMarket(v => !v)}
+        >
+          {offMarketLoading
+            ? <ActivityIndicator size="small" color={showOffMarket ? "#fff" : "#4b5563"} />
+            : <Text style={[styles.layerBtnText, showOffMarket && styles.layerBtnTextActive]}>Off-Mkt</Text>
+          }
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Active listing peek sheet ── */}
       {sheet && (
         <>
           <TouchableOpacity style={styles.sheetBackdrop} onPress={() => setSheet(null)} activeOpacity={1} />
@@ -319,6 +455,104 @@ export default function MapScreen() {
         </>
       )}
 
+      {/* ── Sold comp peek sheet ── */}
+      {soldSheet && (
+        <>
+          <TouchableOpacity style={styles.sheetBackdrop} onPress={() => setSoldSheet(null)} activeOpacity={1} />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetBody}>
+              <View style={styles.sheetTopRow}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <View style={[styles.metaPill, { backgroundColor: "#f3f4f6", alignSelf: "flex-start", marginBottom: 4 }]}>
+                    <Text style={[styles.metaText, { color: "#6b7280", fontWeight: "600" }]}>SOLD COMP</Text>
+                  </View>
+                  <Text style={styles.sheetAddress} numberOfLines={1}>{soldSheet.address}</Text>
+                  <Text style={styles.sheetCity}>{soldSheet.city}, {soldSheet.state}</Text>
+                </View>
+                <TouchableOpacity onPress={() => setSoldSheet(null)}>
+                  <Text style={styles.sheetClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.sheetMidRow}>
+                <Text style={styles.sheetPrice}>{fmtPrice(soldSheet.sold_price)}</Text>
+                {soldSheet.sold_date && (
+                  <View style={[styles.metaPill, { backgroundColor: "#f3f4f6" }]}>
+                    <Text style={[styles.metaText, { color: "#6b7280" }]}>Sold {fmtDate(soldSheet.sold_date)}</Text>
+                  </View>
+                )}
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
+                {(soldSheet.bedrooms > 0 || soldSheet.bathrooms > 0) && (
+                  <View style={styles.metaPill}>
+                    <Text style={styles.metaText}>
+                      {soldSheet.bedrooms}bd · {soldSheet.bathrooms}ba
+                      {soldSheet.sqft ? ` · ${soldSheet.sqft.toLocaleString()} sqft` : ""}
+                    </Text>
+                  </View>
+                )}
+                {soldSheet.prop_type && (
+                  <View style={styles.metaPill}>
+                    <Text style={styles.metaText}>{soldSheet.prop_type}</Text>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </>
+      )}
+
+      {/* ── Off-market peek sheet ── */}
+      {offSheet && (
+        <>
+          <TouchableOpacity style={styles.sheetBackdrop} onPress={() => setOffSheet(null)} activeOpacity={1} />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetBody}>
+              <View style={styles.sheetTopRow}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <View style={[styles.metaPill, { backgroundColor: "#f3f4f6", alignSelf: "flex-start", marginBottom: 4 }]}>
+                    <Text style={[styles.metaText, { color: "#6b7280", fontWeight: "600" }]}>OFF-MARKET</Text>
+                  </View>
+                  <Text style={styles.sheetAddress} numberOfLines={1}>{offSheet.address}</Text>
+                  <Text style={styles.sheetCity}>{offSheet.city}, {offSheet.state}</Text>
+                </View>
+                <TouchableOpacity onPress={() => setOffSheet(null)}>
+                  <Text style={styles.sheetClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.sheetMidRow}>
+                {offSheet.price > 0 && <Text style={styles.sheetPrice}>{fmtPrice(offSheet.price)}</Text>}
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll}>
+                {(offSheet.bedrooms > 0 || offSheet.bathrooms > 0) && (
+                  <View style={styles.metaPill}>
+                    <Text style={styles.metaText}>
+                      {offSheet.bedrooms}bd · {offSheet.bathrooms}ba
+                      {offSheet.sqft ? ` · ${offSheet.sqft.toLocaleString()} sqft` : ""}
+                    </Text>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </>
+      )}
+
+      {/* Comp highlight banner */}
+      {compHighlight && (
+        <View style={styles.compBanner}>
+          <Text style={styles.compBannerText}>Showing {compHighlight.length} sold comps</Text>
+          <TouchableOpacity onPress={() => setCompHighlight(null)} style={styles.compBannerClear}>
+            <Text style={styles.compBannerClearText}>✕ Clear</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Full detail modal */}
       <Modal visible={!!detail} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setDetail(null)}>
         <DetailSheet
@@ -326,10 +560,10 @@ export default function MapScreen() {
           onClose={() => setDetail(null)}
           saved={detail ? savedHomes.has(String(detail.id)) : false}
           onToggleSaved={() => detail && toggleSaved(String(detail.id))}
+          onViewCompsOnMap={comps => { setDetail(null); setCompHighlight(comps); }}
         />
       </Modal>
 
-      {/* Filter panel */}
       <FilterPanel
         visible={showFilters}
         onClose={() => setShowFilters(false)}
@@ -337,7 +571,6 @@ export default function MapScreen() {
         onApply={v => setFilters(v)}
       />
 
-      {/* Weights modal */}
       <WeightsModal visible={showWeights} onClose={() => setShowWeights(false)} />
     </View>
   );
@@ -346,9 +579,6 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   loadingText: { fontSize: 14, color: "#6b7280" },
-
-  pin: { borderRadius: 12, paddingHorizontal: 7, paddingVertical: 3, minWidth: 28, alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3 },
-  pinText: { color: "#fff", fontSize: 11, fontWeight: "700" },
 
   topOverlay: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 200 },
   searchRow: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6 },
@@ -371,6 +601,13 @@ const styles = StyleSheet.create({
   filterBtnText: { fontSize: 11, color: "#374151", fontWeight: "600" },
   filterBtnTextActive: { color: "#fff" },
 
+  // Layer toggle buttons (left side, midway down)
+  layerToggles: { position: "absolute", left: 12, top: "45%", zIndex: 100, gap: 6 } as any,
+  layerBtn: { backgroundColor: "#fff", borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4, elevation: 3, minWidth: 64, alignItems: "center" },
+  layerBtnActive: { backgroundColor: "#4b5563", borderColor: "#4b5563" },
+  layerBtnText: { fontSize: 12, fontWeight: "600", color: "#374151" },
+  layerBtnTextActive: { color: "#fff" },
+
   sheetBackdrop: { position: "absolute", inset: 0, zIndex: 999 } as any,
   sheet: { position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 1000, backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, shadowColor: "#000", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.12, shadowRadius: 12, elevation: 8, paddingBottom: 32 },
   sheetHandle: { width: 40, height: 4, backgroundColor: "#d1d5db", borderRadius: 2, alignSelf: "center", marginTop: 10, marginBottom: 6 },
@@ -390,4 +627,9 @@ const styles = StyleSheet.create({
   metaText: { fontSize: 12, color: "#374151" },
   detailBtn: { backgroundColor: "#111", borderRadius: 10, padding: 14, alignItems: "center" },
   detailBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+
+  compBanner: { position: "absolute", bottom: 32, left: 16, right: 16, zIndex: 900, backgroundColor: "#1e40af", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 6 },
+  compBannerText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  compBannerClear: { backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  compBannerClearText: { color: "#fff", fontSize: 12, fontWeight: "600" },
 });
