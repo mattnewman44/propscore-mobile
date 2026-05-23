@@ -33,21 +33,44 @@ const sd = StyleSheet.create({
   note: { fontSize: 11, marginTop: 4 },
 });
 
-export default function MarketStatsBar({ stats }: { stats: Stat[] }) {
+interface Props {
+  stats: Stat[];
+  rentalStats?: Stat[];
+}
+
+export default function MarketStatsBar({ stats, rentalStats = [] }: Props) {
   const [modalOpen, setModalOpen] = React.useState(false);
 
   return (
     <>
-      <TouchableOpacity style={styles.bar} onPress={() => setModalOpen(true)} activeOpacity={0.8}>
-        {stats.map(s => {
-          const c = statColor(s.type, s.raw);
-          return (
-            <View key={s.abbr} style={[styles.pill, { backgroundColor: c.bg, borderColor: c.border }]}>
-              <Text style={[styles.pillAbbr, { color: c.note }]}>{s.abbr}</Text>
-              <Text style={[styles.pillVal, { color: c.val }]} numberOfLines={1}>{s.display}</Text>
-            </View>
-          );
-        })}
+      <TouchableOpacity onPress={() => setModalOpen(true)} activeOpacity={0.8}>
+        {/* Market stats row */}
+        <View style={styles.bar}>
+          {stats.map(s => {
+            const c = statColor(s.type, s.raw);
+            return (
+              <View key={s.abbr} style={[styles.pill, { backgroundColor: c.bg, borderColor: c.border }]}>
+                <Text style={[styles.pillAbbr, { color: c.note }]}>{s.abbr}</Text>
+                <Text style={[styles.pillVal, { color: c.val }]} numberOfLines={1}>{s.display}</Text>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Rental stats row */}
+        {rentalStats.length > 0 && (
+          <View style={styles.bar}>
+            {rentalStats.map(s => {
+              const c = statColor(s.type, s.raw);
+              return (
+                <View key={s.abbr} style={[styles.pill, { backgroundColor: c.bg, borderColor: c.border }]}>
+                  <Text style={[styles.pillAbbr, { color: c.note }]}>{s.abbr}</Text>
+                  <Text style={[styles.pillVal, { color: c.val }]} numberOfLines={1}>{s.display}</Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
       </TouchableOpacity>
 
       <Modal visible={modalOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalOpen(false)}>
@@ -61,6 +84,15 @@ export default function MarketStatsBar({ stats }: { stats: Stat[] }) {
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
             <Text style={styles.modalSub}>Based on all listings in your current search.</Text>
             {stats.map(s => <StatDetail key={s.abbr} stat={s} />)}
+
+            {rentalStats.length > 0 && (
+              <>
+                <View style={styles.sectionDivider} />
+                <Text style={styles.sectionTitle}>Rental Market</Text>
+                <Text style={styles.modalSub}>Metro-level rental data from Zillow ZORI.</Text>
+                {rentalStats.map(s => <StatDetail key={s.abbr} stat={s} />)}
+              </>
+            )}
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -78,4 +110,6 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 16, fontWeight: "700", color: "#111" },
   modalClose: { fontSize: 15, color: "#2563eb", fontWeight: "600" },
   modalSub: { fontSize: 12, color: "#9ca3af", marginBottom: 20 },
+  sectionDivider: { height: 0.5, backgroundColor: "#e5e7eb", marginBottom: 20 },
+  sectionTitle: { fontSize: 15, fontWeight: "700", color: "#111", marginBottom: 4 },
 });

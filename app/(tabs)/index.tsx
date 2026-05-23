@@ -44,7 +44,7 @@ const GRADE_BTNS = [
 ];
 
 export default function HomeScreen() {
-  const { listings, loading, fetchError, savedHomes, toggleSaved, updateListing, marketStats, hasCustomWeights } = useListings();
+  const { listings, loading, fetchError, savedHomes, toggleSaved, updateListing, marketStats, rentalStats, hasCustomWeights } = useListings();
 
   const [searchLoading, setSearchLoading]   = useState(false);
   const [selected, setSelected]             = useState<any>(null);
@@ -299,7 +299,7 @@ export default function HomeScreen() {
       </View>
 
       {/* Market stats */}
-      {!loading && <MarketStatsBar stats={marketStats} />}
+      {!loading && <MarketStatsBar stats={marketStats} rentalStats={rentalStats} />}
 
       {/* List */}
       {loading ? (

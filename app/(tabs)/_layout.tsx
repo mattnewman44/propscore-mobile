@@ -28,6 +28,13 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <Text style={{ fontSize: 18, color }}>🗺</Text>,
         }}
       />
+      <Tabs.Screen
+        name="dashboard"
+        options={{
+          title: "Dashboard",
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 18, color }}>📊</Text>,
+        }}
+      />
     </Tabs>
     </ListingsProvider>
   );
